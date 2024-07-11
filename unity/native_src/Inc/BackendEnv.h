@@ -123,6 +123,13 @@ namespace PUERTS_NAMESPACE
             v8::Local<v8::FixedArray> import_attributes,    // not implement yet
 #endif
             v8::Local<v8::Module> referrer);
+
+#if defined(WITH_V8_BYTECODE)
+        uint32_t Expect_FlagHash = 0;
+        v8::Global<v8::Function> GenEmptyCode;
+        bool TryLoadCacheData(v8::Isolate* isolate, v8::Local<v8::Context> context, const std::string& absolute_file_path_str,
+            v8::Local<v8::Value>* source_or_cache, v8::ScriptCompiler::CachedData** cache_data);
+#endif
 #endif
         std::map<int, std::string> ScriptIdToPathMap;
 

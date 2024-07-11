@@ -19,6 +19,7 @@ puer.getGenericMethod = global.__tgjsGetGenericMethod;
 delete global.__tgjsGetGenericMethod;
 
 puer.evalScript = global.__tgjsEvalScript || function (script, debugPath) {
+    console.log('puer.evalScript', script, debugPath)
     return eval(script);
 }
 delete global.__tgjsEvalScript;
@@ -31,9 +32,16 @@ delete global.__tgjsGetLoader;
 
 function loadFile(path) {
     let debugPath = [];
-    var content = loader.ReadFile(path, debugPath);
+    let content;
+    if (loader.ReadFileBytes) {
+        content = loader.ReadFileBytes(path, debugPath);
+    } else {
+        content = loader.ReadFile(path, debugPath);
+    }
     return { content: content, debugPath: debugPath[0] };
 }
 puer.loadFile = loadFile;
 
 puer.fileExists = loader.FileExists.bind(loader);
+
+

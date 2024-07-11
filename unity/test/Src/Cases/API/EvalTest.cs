@@ -471,5 +471,30 @@ export default DModule;");
             jsEnv.Tick();
             StringAssert.Contains("hello", jsEnv.Eval<string>("result_ESDynamicModuleImportRelative.toString()"));
         }
+
+        [Test]
+        public void ESModuleByteCode()
+        {
+            var loader = new UnitTestLoaderByteCode();
+            var jsEnv = new JsEnv(loader);
+            if (jsEnv.Backend is BackendV8) {
+                jsEnv.ExecuteModule("bytecode/console_log_test.mjs");
+                jsEnv.Tick();
+            }
+        }
+
+        [Test]
+        public void ESModuleExecuteCJSByteCode()
+        {
+            var loader = new UnitTestLoaderByteCode();
+            var jsEnv = new JsEnv(loader);
+            if (jsEnv.Backend is BackendV8)
+            {
+                ThirdParty.CommonJS.InjectSupportForCJS(jsEnv);
+                string str = jsEnv.ExecuteModule<string>("bytecode/a_mjs.mjs", "default");
+                Assert.True(str == "hello world");
+                jsEnv.Tick();
+            }
+        }
     }
 }

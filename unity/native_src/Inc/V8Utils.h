@@ -14,7 +14,17 @@
 namespace PUERTS_NAMESPACE
 {
 const intptr_t OBJECT_MAGIC = 0xFA0E5D68; // a random value
-
+#if defined(WITH_V8_BYTECODE)
+struct FCodeCacheHeader
+{
+    uint32_t MagicNumber;
+    uint32_t VersionHash;
+    uint32_t SourceHash;
+    uint32_t FlagHash;
+    uint32_t PayloadLength;
+    uint32_t Checksum;
+};
+#endif
 class FV8Utils
 {
 public:
