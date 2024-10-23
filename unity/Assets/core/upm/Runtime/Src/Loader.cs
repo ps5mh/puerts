@@ -20,9 +20,19 @@ namespace Puerts
         bool FileExists(string filepath);
         string ReadFile(string filepath, out string debugpath);
     }
+#if ENABLE_IL2CPP
+    [UnityEngine.Scripting.Preserve]
+#endif
     public interface IModuleChecker
     {
         bool IsESM(string filepath);
+    }
+#if ENABLE_IL2CPP
+    [UnityEngine.Scripting.Preserve]
+#endif
+    public interface IByteCodeLoader
+    {
+        ArrayBuffer ReadFileBytes(string filepath, out string debugpath);
     }
 
 #if ENABLE_IL2CPP

@@ -41,6 +41,26 @@ namespace PUERTS_NAMESPACE
         return Ab;
     }
 
+    static void UTF8Decode(const v8::FunctionCallbackInfo<v8::Value>& Info)
+    {
+        v8::Isolate* Isolate = Info.GetIsolate();
+#ifdef THREAD_SAFE
+        v8::Locker Locker(Isolate);
+#endif
+        v8::Isolate::Scope IsolateScope(Isolate);
+        v8::HandleScope HandleScope(Isolate);
+        v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+        v8::Context::Scope ContextScope(Context);
+        if (Info.Length() != 1 || !Info[0]->IsArrayBuffer())
+        {
+            FV8Utils::ThrowException(Isolate, "invalid argument for UTF8Decode");
+            return;
+        }
+        auto abb = Info[0].As<v8::ArrayBuffer>()->GetBackingStore();
+        auto str = v8::String::NewFromUtf8(Isolate, (const char*)abb->Data(), v8::NewStringType::kNormal, abb->ByteLength()).ToLocalChecked();
+        Info.GetReturnValue().Set(str);
+    }
+
     static void EvalWithPath(const v8::FunctionCallbackInfo<v8::Value>& Info)
     {
         v8::Isolate* Isolate = Info.GetIsolate();
@@ -52,20 +72,47 @@ namespace PUERTS_NAMESPACE
         v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
         v8::Context::Scope ContextScope(Context);
 
-        if (Info.Length() != 2 || !Info[0]->IsString() || !Info[1]->IsString())
+        if (Info.Length() != 2 || (!Info[0]->IsString() && !Info[0]->IsArrayBuffer()) || !Info[1]->IsString())
         {
             FV8Utils::ThrowException(Isolate, "invalid argument for evalScript");
             return;
         }
 
-        v8::Local<v8::String> Source = Info[0]->ToString(Context).ToLocalChecked();
         v8::Local<v8::String> Name = Info[1]->ToString(Context).ToLocalChecked();
 #if defined(V8_94_OR_NEWER) && !defined(WITH_QUICKJS)
         v8::ScriptOrigin Origin(Isolate, Name);
 #else
         v8::ScriptOrigin Origin(Name);
 #endif
+        auto JsEngine = FV8Utils::IsolateData<JSEngine>(Isolate);
+#if defined(WITH_QUICKJS)
+        v8::Local<v8::String> Source;
+        if (Info[0]->IsArrayBuffer())
+        {
+            auto bs = Info[0].As<v8::ArrayBuffer>()->GetBackingStore();
+            Source = v8::String::NewFromUtf8(Isolate, (const char*)bs->Data(), v8::NewStringType::kNormal, bs->ByteLength()).ToLocalChecked();
+        }
+        else
+        {
+            Source = Info[0]->ToString(Context).ToLocalChecked();
+        }
         auto Script = v8::Script::Compile(Context, Source, &Origin);
+#else
+        v8::ScriptCompiler::CompileOptions options = v8::ScriptCompiler::CompileOptions::kNoCompileOptions;
+        v8::ScriptCompiler::CachedData* cache_data = NULL;
+        v8::String::Utf8Value name_str(Isolate, Name);
+        v8::Local<v8::Value> source = Info[0];
+        if (!JsEngine->BackendEnv.TryLoadCacheData(Isolate, Context, *name_str, &source, &cache_data))
+        {
+            return;
+        }
+        if (cache_data != NULL)
+        {
+            options = v8::ScriptCompiler::CompileOptions::kConsumeCodeCache;
+        }
+        v8::ScriptCompiler::Source ScriptSource(source.As<v8::String>(), Origin, cache_data);
+        auto Script = v8::ScriptCompiler::Compile(Context, &ScriptSource, options);
+#endif
         if (Script.IsEmpty())
         {
             return;
@@ -110,6 +157,10 @@ namespace PUERTS_NAMESPACE
 #if PLATFORM_IOS
         Flags += " --jitless --no-expose-wasm";
 #endif
+
+#if defined(WITH_V8_BYTECODE)
+        Flags += "--no-lazy --no-flush-bytecode --no-enable_lazy_source_positions";
+#endif
         v8::V8::SetFlagsFromString(Flags.c_str(), static_cast<int>(Flags.size()));
 
         BackendEnv.Initialize(external_quickjs_runtime, external_quickjs_context);
@@ -138,14 +189,33 @@ namespace PUERTS_NAMESPACE
             Global->Set(Context, FV8Utils::V8String(Isolate, "__puertsGetLastException"), v8::FunctionTemplate::New(Isolate, &GetLastException)->GetFunction(Context).ToLocalChecked()).Check();
         }
         Global->Set(Context, FV8Utils::V8String(Isolate, "__tgjsEvalScript"), v8::FunctionTemplate::New(Isolate, &EvalWithPath)->GetFunction(Context).ToLocalChecked()).Check();
-
+        Global->Set(Context, FV8Utils::V8String(Isolate, "__puer_utf8_decode__"), v8::FunctionTemplate::New(Isolate, &UTF8Decode)->GetFunction(Context).ToLocalChecked()).Check();
         JSObjectIdMap.Reset(Isolate, v8::Map::New(Isolate));
 
         JSObjectValueGetter = CreateJSFunction(
             Isolate, Context, 
             v8::FunctionTemplate::New(Isolate, &JSObjectValueGetterFunction)->GetFunction(Context).ToLocalChecked()
         );
-
+#if defined(WITH_V8_BYTECODE)
+        static const char* __puer_generate_empty_code__ =
+"(function() {                                                                                      \n"
+"    var global = this;                                                                             \n"
+"    let baseString                                                                                 \n"
+"    global.__puer_generate_empty_code__ = function(length) {                                       \n"
+"        if (baseString === undefined) {                                                            \n"
+"            baseString = ' '.repeat(128*1024);                                                     \n"
+"        }                                                                                          \n"
+"        if (length <= baseString.length) {                                                         \n"
+"            return baseString.slice(0, length);                                                    \n"
+"        } else {                                                                                   \n"
+"            const fullString = baseString.repeat(Math.floor(length / baseString.length));          \n"
+"            const remainingLength = length % baseString.length;                                    \n"
+"            return fullString.concat(baseString.slice(0, remainingLength));                        \n"
+"        }                                                                                          \n"
+"    }                                                                                              \n"
+"})();";
+        Eval(__puer_generate_empty_code__, "__puer_generate_empty_code__.mjs");
+#endif
         BackendEnv.StartPolling();
     }
 

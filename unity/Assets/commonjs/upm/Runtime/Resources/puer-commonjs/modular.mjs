@@ -32,7 +32,16 @@ function executeModule(fullPath, script, debugPath, sid) {
     let exports = {};
     let module = puer.getModuleBySID(sid);
     module.exports = exports;
-    let wrapped = puer.evalScript(
+    let wrapped;
+    if (script instanceof ArrayBuffer) {
+        let u8a = new Uint8Array(script)
+        if (u8a[2] === 0xde && u8a[3] === 0xc0) {
+            wrapped = puer.evalScript(script, debugPath);
+        } else {
+            script = __puer_utf8_decode__(u8a)
+        }
+    }
+    wrapped = wrapped ?? puer.evalScript(
         // Wrap the script in the same way NodeJS does it. It is important since IDEs (VSCode) will use this wrapper pattern
         // to enable stepping through original source in-place.
         "(function (exports, require, module, __filename, __dirname) { " + script + "\n});", 

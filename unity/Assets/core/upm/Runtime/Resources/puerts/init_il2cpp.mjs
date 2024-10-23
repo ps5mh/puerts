@@ -168,9 +168,14 @@ let loader = jsEnv.GetLoader();
 
 // puer.fileExists = loader.Resolve.bind(loader);
 function loadFile(path) {
-    let debugPath = {};
-    var content = loader.ReadFile(path, debugPath);
-    return { content: content, debugPath: debugPath.value };
+    let debugPath = [];
+    let content;
+    if (loader.ReadFileBytes) {
+        content = loader.ReadFileBytes(path, debugPath);
+    } else {
+        content = loader.ReadFile(path, debugPath);
+    }
+    return { content: content, debugPath: debugPath[0] };
 }
 puer.loadFile = loadFile;
 

@@ -6,7 +6,7 @@
 */
 
 #pragma once
-
+#define WITH_V8_BYTECODE
 #include "CommonTypes.h"
 
 #pragma warning(push, 0)  
