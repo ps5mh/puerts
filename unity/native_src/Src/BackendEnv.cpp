@@ -232,6 +232,12 @@ void FBackendEnv::GlobalPrepare()
 #if V8_MAJOR_VERSION <= 9
         Flags += " --no-harmony-top-level-await";
 #endif
+#if defined(V8_BACKEND)
+#if defined(WITH_V8_BYTECODE)
+        Flags += " --no-lazy --no-flush-bytecode --no-enable_lazy_source_positions";
+#endif
+        Flags = Flags + " " + V8_EXTRA_FLAGS;
+#endif
         v8::V8::SetFlagsFromString(Flags.c_str(), static_cast<int>(Flags.size()));
 
 #if defined(WITH_NODEJS)
@@ -359,6 +365,13 @@ void FBackendEnv::Initialize(void* external_quickjs_runtime, void* external_quic
 #else
     Global->Set(Context, v8::String::NewFromUtf8(Isolate, EXECUTEMODULEGLOBANAME).ToLocalChecked(), v8::FunctionTemplate::New(Isolate, esmodule::ExecuteModule)->GetFunction(Context).ToLocalChecked()).Check();
     Global->Set(Context, v8::String::NewFromUtf8(Isolate, "v8").ToLocalChecked(), GetV8Extras(Isolate, Context));
+#if defined(WITH_V8_BYTECODE)
+    auto Script = v8::Script::Compile(Context, FV8Utils::V8String(Isolate, "")).ToLocalChecked();
+    auto CachedCode = v8::ScriptCompiler::CreateCodeCache(Script->GetUnboundScript());
+    const FCodeCacheHeader* CodeCacheHeader = (const FCodeCacheHeader*) CachedCode->data;
+    Expect_FlagHash = CodeCacheHeader->FlagHash;    // get FlagHash
+    delete CachedCode;
+#endif
 #endif
 
 #if defined(WITH_WEBSOCKET)
@@ -383,6 +396,9 @@ void FBackendEnv::UnInitialize()
     //     *static_cast<bool*>(data) = true;
     // }, &platform_finished);
     Platform->UnregisterIsolate(MainIsolate);
+#endif
+#if defined(WITH_V8_BYTECODE) && !defined(WITH_QUICKJS)
+    GenEmptyCode.Reset();
 #endif
     MainContext.Reset();
     MainIsolate->Dispose();
@@ -706,6 +722,63 @@ char* esmodule::module_normalize(
 }
 
 #else
+bool FBackendEnv::TryLoadCacheData(v8::Isolate* isolate, v8::Local<v8::Context> context, const std::string& absolute_file_path_str,
+    v8::Local<v8::Value>* source_or_cache, v8::ScriptCompiler::CachedData** cache_data)
+{
+    v8::Local<v8::Value>& src = (*source_or_cache);
+    *cache_data = nullptr;
+    if (src->IsArrayBuffer())
+    {
+        v8::Local<v8::ArrayBuffer> byteCode = v8::Local<v8::ArrayBuffer>::Cast(src);
+        auto abb = byteCode->GetBackingStore();
+        uint8_t* cch = (uint8_t*) abb->Data();
+        if (abb->ByteLength() <= 4 || cch[2] != 0xde || cch[3] != 0xc0)    // magic code: XXXXdec0 (little endian)
+        {
+            src = v8::String::NewFromUtf8(isolate, (char*) byteCode->GetBackingStore()->Data(), v8::NewStringType::kNormal,
+                byteCode->GetBackingStore()->ByteLength())
+                      .ToLocalChecked();
+        }
+        else
+        {
+#if defined(WITH_V8_BYTECODE)
+            FCodeCacheHeader* cch = (FCodeCacheHeader*) abb->Data();
+            if (cch->FlagHash != Expect_FlagHash)
+            {
+                puerts::PLog(puerts::Warning, "FlagHash not match expect %u, but got %u", Expect_FlagHash, cch->FlagHash);
+                cch->FlagHash = Expect_FlagHash;
+            }
+            static constexpr uint32_t kModuleFlagMask = (1 << 31);
+            uint32_t Len = cch->SourceHash & ~kModuleFlagMask;
+            v8::Local<v8::Value> Args[] = {v8::Integer::New(isolate, Len)};
+            v8::Local<v8::Value> Ret;
+
+            if (GenEmptyCode.IsEmpty())
+                GenEmptyCode.Reset(isolate, context->Global()
+                                                ->Get(context, FV8Utils::V8String(isolate, "__puer_generate_empty_code__"))
+                                                .ToLocalChecked()
+                                                .As<v8::Function>());
+
+            if (!GenEmptyCode.Get(isolate)->Call(context, v8::Undefined(isolate), 1, Args).ToLocal(&Ret) || !Ret->IsString())
+            {
+                char buff[512];
+                snprintf(buff, 512, "generate code for bytecode [%s] fail!", absolute_file_path_str.c_str());
+                FV8Utils::ThrowException(isolate, buff);
+                return false;
+            }
+            *cache_data =
+                new v8::ScriptCompiler::CachedData((uint8_t*) abb->Data(), abb->ByteLength());    // will delete by ~Source
+            src = Ret.As<v8::String>();
+#else
+            char buff[512];
+            snprintf(buff, 512, "Load Module: [%s] fail, compile with WITH_V8_BYTECODE to support v8 bytecode",
+                absolute_file_path_str.c_str());
+            FV8Utils::ThrowException(isolate, buff);
+            return false;
+#endif
+        }
+    }
+    return true;
+}
     
 v8::MaybeLocal<v8::Value> FBackendEnv::ResolvePath(
     v8::Isolate* Isolate,
@@ -758,15 +831,17 @@ v8::MaybeLocal<v8::Module> FBackendEnv::FetchModuleTree(v8::Isolate* isolate, v8
     }
     std::string pathForDebug;
     
-    v8::Local<v8::Value> source_text;
+    v8::Local<v8::Value> source_text_or_bytecode;
     
-    if (!ReadFile(isolate, context, absolute_file_path, pathForDebug).ToLocal(&source_text))
+    if (!ReadFile(isolate, context, absolute_file_path, pathForDebug).ToLocal(&source_text_or_bytecode))
     {
         return v8::MaybeLocal<v8::Module>();
     }
-    if (!source_text->IsString())
+    if (!source_text_or_bytecode->IsString() && !source_text_or_bytecode->IsArrayBuffer())
     {
-        FV8Utils::ThrowException(isolate, "source_text is not a string!");
+        char buff[512];
+        snprintf(buff, 512, "source_text is not a string or array buffer! Load Module: [%s] fail!", absolute_file_path_str.c_str());
+        FV8Utils::ThrowException(isolate, buff);
         return v8::MaybeLocal<v8::Module>();
     }
     v8::Local<v8::String> script_url = absolute_file_path;
@@ -780,9 +855,20 @@ v8::MaybeLocal<v8::Module> FBackendEnv::FetchModuleTree(v8::Isolate* isolate, v8
     v8::ScriptOrigin origin(script_url, v8::Integer::New(isolate, 0), v8::Integer::New(isolate, 0), v8::True(isolate),
         v8::Local<v8::Integer>(), v8::Local<v8::Value>(), v8::False(isolate), v8::False(isolate), v8::True(isolate));
 #endif
-    v8::ScriptCompiler::Source source(source_text.As<v8::String>(), origin);
+    v8::ScriptCompiler::CompileOptions options = v8::ScriptCompiler::CompileOptions::kNoCompileOptions;
+    v8::ScriptCompiler::CachedData* cache_data = NULL;
+    FBackendEnv* mm = FBackendEnv::Get(isolate);
+    if (!mm->TryLoadCacheData(isolate, context, absolute_file_path_str, &source_text_or_bytecode, &cache_data))
+    {
+        return v8::MaybeLocal<v8::Module>();
+    }
+    if (cache_data != NULL)
+    {
+        options = v8::ScriptCompiler::CompileOptions::kConsumeCodeCache;
+    }
+    v8::ScriptCompiler::Source source(source_text_or_bytecode.As<v8::String>(), origin, cache_data);
     v8::Local<v8::Module> module;
-    if (!v8::ScriptCompiler::CompileModule(isolate, &source).ToLocal(&module))
+    if (!v8::ScriptCompiler::CompileModule(isolate, &source, options).ToLocal(&module))
     {
         return v8::MaybeLocal<v8::Module>();
     }

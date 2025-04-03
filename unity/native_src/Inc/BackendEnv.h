@@ -99,6 +99,13 @@ namespace PUERTS_NAMESPACE
         char* NormalizeModuleName(JSContext *ctx, const char *base_name, const char *name);
 #else
         std::map<std::string, v8::UniquePersistent<v8::Module>> PathToModuleMap;
+
+#if defined(WITH_V8_BYTECODE)
+        uint32_t Expect_FlagHash = 0;
+        v8::Global<v8::Function> GenEmptyCode;
+#endif
+        bool TryLoadCacheData(v8::Isolate* isolate, v8::Local<v8::Context> context, const std::string& absolute_file_path_str,
+            v8::Local<v8::Value>* source_or_cache, v8::ScriptCompiler::CachedData** cache_data);
         struct FModuleInfo
         {
             v8::Global<v8::Module> Module;

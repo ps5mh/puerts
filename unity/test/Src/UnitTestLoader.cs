@@ -5,7 +5,7 @@ using Puerts;
 
 namespace Puerts.UnitTest 
 {
-    public class UnitTestLoader2: IResolvableLoader, ILoader, IModuleChecker
+    public class UnitTestLoader2: IResolvableLoader, ILoader, IModuleChecker, IByteCodeLoader
     {
 
         public UnitTestLoader2() 
@@ -65,6 +65,12 @@ namespace Puerts.UnitTest
         [UnityEngine.Scripting.Preserve]
         public string ReadFile(string specifier, out string debugpath)
         {
+            throw new System.Exception("should use ReadFileBytes");
+        }
+
+        [UnityEngine.Scripting.Preserve]
+        public object ReadFileBytes(string specifier, out string debugpath)
+        {
             if (nullFiles.Contains(specifier))
             {
                 debugpath = string.Empty;
@@ -77,9 +83,9 @@ namespace Puerts.UnitTest
 
                 } else if (mockFileContent.ContainsKey(specifier)) {
                     return mockFileContent[specifier];
-
                 } else if (UnityEngine.Resources.Load(FixSpecifier(specifier)) != null) {
-                    return UnityEngine.Resources.Load<UnityEngine.TextAsset>(FixSpecifier(specifier)).text;
+                    var bytes = UnityEngine.Resources.Load<UnityEngine.TextAsset>(FixSpecifier(specifier)).bytes;
+                    return new ArrayBuffer(bytes);
 
                 }
             }

@@ -24,6 +24,13 @@ namespace Puerts
     {
         bool IsESM(string filepath);
     }
+    public interface IByteCodeLoader
+    {
+        // support return types: 
+        //  string for source code text, incase there are code you prefer keep as sourcecode.
+        //  Puerts.ArrayBuffer for bytecode
+        object ReadFileBytes(string filepath, out string debugpath);
+    }
 
 #if ENABLE_IL2CPP
     [UnityEngine.Scripting.Preserve]

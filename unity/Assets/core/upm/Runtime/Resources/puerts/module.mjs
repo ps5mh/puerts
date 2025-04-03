@@ -91,7 +91,7 @@ function normalizeAsPosix(path) {
     return isAbsolute ? `/${path}` : path;
 }
 
-function joinAsPosix(...args) {
+export function joinAsPosix(...args) {
     if (args.length === 0)
         return '.';
     let joined;
@@ -202,24 +202,39 @@ function dirname(path) {
     return path.slice(0, end);
 }
 
-function executeModule(fullPath, script, debugPath) {
+function executeModule(fullPath, script, debugPath, resolver) {
     if (debugPath === undefined) debugPath = fullPath;
     let exports = {};
     let module = tmpModuleStorage.get(fullPath);
     module.exports = exports;
-    let wrapped = puer.evalScript(
+    let wrapped;
+    if (script instanceof ArrayBuffer) {
+        const u8a = new Uint8Array(script);
+        if (u8a[2] === 0xde && u8a[3] === 0xc0) {
+            // v8 byte code
+            wrapped = puer.evalScript(script, debugPath);
+        } else if (u8a[0] == 0x50 && u8a[1] == 0x49 && u8a[2] == 0x58 && u8a[3] == 0x32) {
+            // quickjs byte code
+            wrapped = puer.evalScript(script, debugPath);
+        } else {
+            script = new TextDecoder().decode(script);
+        }
+    }
+    wrapped =
+        wrapped ??
+        puer.evalScript(
         // Wrap the script in the same way NodeJS does it. It is important since IDEs (VSCode) will use this wrapper pattern
         // to enable stepping through original source in-place.
         "(function (exports, require, module, __filename, __dirname) { " + script + "\n});", 
         debugPath
-    )
-    wrapped(exports, createLazyRequire(fullPath), module, debugPath, dirname(debugPath))
+        );
+    wrapped(exports, createLazyRequire(fullPath, resolver), module, debugPath, dirname(debugPath))
     return module.exports;
 }
 
 let __default_is_weak = true;
 
-function createLazyRequire(referer) {
+function createLazyRequire(referer, resolver) {
     const filename = normalizeAsPosix(fileURLToPath(referer));
     //console.log(`createLazyRequire(${referer}): ${filename}`);
     let requiringDir = dirname(filename);
@@ -227,7 +242,7 @@ function createLazyRequire(referer) {
     
     function require(specifier) {
         //console.log(`require(${specifier}) by ${referer}`);
-        let fullPath = joinAsPosix(requiringDir, specifier);
+        let fullPath = resolver ? resolver(specifier, requiringDir, referer) : joinAsPosix(requiringDir, specifier);
         
         let key = fullPath;
         let res = exportsCache.get(key);
@@ -261,7 +276,7 @@ function createLazyRequire(referer) {
                 }
             } else {
                 //console.warn(`executeModule(${fullPath})`)
-                executeModule(fullPath, content, debugPath);
+                executeModule(fullPath, content, debugPath, resolver);
             }
             exportsCache.set(key, module.exports, typeof module.exports.__auto_release !== 'boolean' ? __default_is_weak : module.exports.__auto_release );
         } catch(e) {

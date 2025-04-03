@@ -1,0 +1,67 @@
+{
+	"folders": [
+		{
+			"name": "test runner",
+			"path": "unity"
+		},
+		{
+			"name": "test case",
+			"path": "Src"
+		},
+		{
+			"name": "puerts c#",
+			"path": "../Assets/core/upm"
+		},
+		{
+			"name": "puerts commonjs",
+			"path": "../Assets/commonjs"
+		},
+		{
+			"name": "puerts webgl",
+			"path": "../Assets/webgl"
+		},
+		{
+			"name": "puerts webgl-jsbuild",
+			"path": "./webgl-jsbuild"
+		},
+		{
+			"name": "puerts c++",
+			"path": "../native_src"
+		},
+		{
+			"name": "tdrjs",
+			"path": "../../tdrjs"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/.git": true,
+			"**/.svn": true,
+			"**/.hg": true,
+			"**/CVS": true,
+			"**/.DS_Store": true,
+			"**/Thumbs.db": true,
+			"build*": true,
+			"Plugins": true,
+            "*.meta": true,
+            ".backends": true
+		},
+		"cmake.options.statusBarVisibility": "visible",
+		"cmake.configureArgs": [
+			"-DBACKEND_DEFINITIONS=V8_94_OR_NEWER;WITH_V8_BYTECODE;WITH_INSPECTOR;WITH_INSPECTOR",
+			"-DBACKEND_LIB_NAMES=/Lib/Win64DLL/v8.dll.lib;/Lib/Win64DLL/v8_libplatform.dll.lib;/Lib/Win64DLL/v8qjs.lib;/Lib/Win64DLL/PixUI_Unity.lib",
+			"-DBACKEND_INC_NAMES=/Inc",
+			"-DBACKEND_ROOT=D:\\source\\puerts\\unity\\native_src/.backends/mult-pixqjs-v8",
+			"-DWITH_WEBSOCKET=2",
+			"-DUSING_V8=ON",
+			"-DUSING_QJS=ON",
+			"-DJS_ENGINE=mult-pixqjs-v8-with-inspector"
+		],
+		"files.associations": {
+			"*.lua.bytes": "lua",
+			"*.js.bytes": "javascript",
+			"*.lua.txt": "lua",
+			"*.ipp": "cpp"
+		}
+	}
+}

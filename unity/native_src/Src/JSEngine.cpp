@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Tencent is pleased to support the open source community by making Puerts available.
 * Copyright (C) 2020 THL A29 Limited, a Tencent company.  All rights reserved.
 * Puerts is licensed under the BSD 3-Clause License, except for the third-party components listed in the file 'LICENSE' which may be subject to their corresponding license terms.
@@ -41,6 +41,48 @@ namespace PUERTS_NAMESPACE
         return Ab;
     }
 
+    static void UTF8Encode(const v8::FunctionCallbackInfo<v8::Value>& Info)
+    {
+        v8::Isolate* Isolate = Info.GetIsolate();
+    #ifdef THREAD_SAFE
+        v8::Locker Locker(Isolate);
+    #endif
+        v8::Isolate::Scope IsolateScope(Isolate);
+        v8::HandleScope HandleScope(Isolate);
+        v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+        v8::Context::Scope ContextScope(Context);
+        if (Info.Length() != 1 || !Info[0]->IsString())
+        {
+            FV8Utils::ThrowException(Isolate, "invalid argument for UTF8Encode");
+            return;
+        }
+        auto jsStr = Info[0]->ToString(Context).ToLocalChecked();
+        v8::String::Utf8Value str(Isolate, jsStr);
+        auto ab = v8::ArrayBuffer::New(Isolate, str.length());
+        memcpy(ab->GetBackingStore()->Data(), *str, str.length());
+        Info.GetReturnValue().Set(ab);
+    }
+
+    static void UTF8Decode(const v8::FunctionCallbackInfo<v8::Value>& Info)
+    {
+        v8::Isolate* Isolate = Info.GetIsolate();
+    #ifdef THREAD_SAFE
+        v8::Locker Locker(Isolate);
+    #endif
+        v8::Isolate::Scope IsolateScope(Isolate);
+        v8::HandleScope HandleScope(Isolate);
+        v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+        v8::Context::Scope ContextScope(Context);
+        if (Info.Length() != 1 || !Info[0]->IsArrayBuffer())
+        {
+            FV8Utils::ThrowException(Isolate, "invalid argument for UTF8Decode");
+            return;
+        }
+        auto abb = Info[0].As<v8::ArrayBuffer>()->GetBackingStore();
+        auto str = v8::String::NewFromUtf8(Isolate, (const char*)abb->Data(), v8::NewStringType::kNormal, abb->ByteLength()).ToLocalChecked();
+        Info.GetReturnValue().Set(str);
+    }
+
     static void EvalWithPath(const v8::FunctionCallbackInfo<v8::Value>& Info)
     {
         v8::Isolate* Isolate = Info.GetIsolate();
@@ -52,20 +94,39 @@ namespace PUERTS_NAMESPACE
         v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
         v8::Context::Scope ContextScope(Context);
 
-        if (Info.Length() != 2 || !Info[0]->IsString() || !Info[1]->IsString())
+        if (Info.Length() != 2 || (!Info[0]->IsString() && !Info[0]->IsArrayBuffer()) || !Info[1]->IsString())
         {
             FV8Utils::ThrowException(Isolate, "invalid argument for evalScript");
             return;
         }
-
-        v8::Local<v8::String> Source = Info[0]->ToString(Context).ToLocalChecked();
+        
         v8::Local<v8::String> Name = Info[1]->ToString(Context).ToLocalChecked();
 #if defined(V8_94_OR_NEWER) && !defined(WITH_QUICKJS)
         v8::ScriptOrigin Origin(Isolate, Name);
 #else
         v8::ScriptOrigin Origin(Name);
 #endif
+
+#if WITH_QUICKJS
+        v8::Local<v8::String> Source = Info[0]->ToString(Context).ToLocalChecked();
         auto Script = v8::Script::Compile(Context, Source, &Origin);
+#else
+        v8::Local<v8::Value> Source = Info[0];
+        v8::ScriptCompiler::CompileOptions options = v8::ScriptCompiler::CompileOptions::kNoCompileOptions;
+        v8::ScriptCompiler::CachedData* cache_data = NULL;
+        v8::String::Utf8Value name_str(Isolate, Name);
+        auto JsEngine = FV8Utils::IsolateData<JSEngine>(Isolate);
+        if (!JsEngine->BackendEnv.TryLoadCacheData(Isolate, Context, *name_str, &Source, &cache_data))
+        {
+            return;
+        }
+        if (cache_data != NULL)
+        {
+            options = v8::ScriptCompiler::CompileOptions::kConsumeCodeCache;
+        }
+        v8::ScriptCompiler::Source ScriptSource(Source.As<v8::String>(), Origin, cache_data);
+        auto Script = v8::ScriptCompiler::Compile(Context, &ScriptSource, options);
+#endif
         if (Script.IsEmpty())
         {
             return;
@@ -126,6 +187,8 @@ namespace PUERTS_NAMESPACE
             Global->Set(Context, FV8Utils::V8String(Isolate, "__puertsGetLastException"), v8::FunctionTemplate::New(Isolate, &GetLastException)->GetFunction(Context).ToLocalChecked()).Check();
         }
         Global->Set(Context, FV8Utils::V8String(Isolate, "__tgjsEvalScript"), v8::FunctionTemplate::New(Isolate, &EvalWithPath)->GetFunction(Context).ToLocalChecked()).Check();
+        Global->Set(Context, FV8Utils::V8String(Isolate, "__puer_utf8_decode__"), v8::FunctionTemplate::New(Isolate, &UTF8Decode)->GetFunction(Context).ToLocalChecked()).Check();
+        Global->Set(Context, FV8Utils::V8String(Isolate, "__puer_utf8_encode__"), v8::FunctionTemplate::New(Isolate, &UTF8Encode)->GetFunction(Context).ToLocalChecked()).Check();
 
         JSObjectIdMap.Reset(Isolate, v8::Map::New(Isolate));
 
@@ -145,6 +208,26 @@ namespace PUERTS_NAMESPACE
 #endif
 #endif
 
+#if defined(WITH_V8_BYTECODE)
+    static const char* __puer_generate_empty_code__ =
+"(function() {                                                                                      \n"
+"    var global = this;                                                                             \n"
+"    let baseString                                                                                 \n"
+"    global.__puer_generate_empty_code__ = function(length) {                                       \n"
+"        if (baseString === undefined) {                                                            \n"
+"            baseString = ' '.repeat(128*1024);                                                     \n"
+"        }                                                                                          \n"
+"        if (length <= baseString.length) {                                                         \n"
+"            return baseString.slice(0, length);                                                    \n"
+"        } else {                                                                                   \n"
+"            const fullString = baseString.repeat(Math.floor(length / baseString.length));          \n"
+"            const remainingLength = length % baseString.length;                                    \n"
+"            return fullString.concat(baseString.slice(0, remainingLength));                        \n"
+"        }                                                                                          \n"
+"    }                                                                                              \n"
+"})();";
+    Eval(__puer_generate_empty_code__, "__puer_generate_empty_code__.mjs");
+#endif
         BackendEnv.StartPolling();
     }
 

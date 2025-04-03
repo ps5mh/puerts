@@ -108,9 +108,27 @@ let loader = jsEnv.GetLoader();
 // puer.loadFile = loadFile;
 
 // puer.fileExists = loader.Resolve.bind(loader);
+class TextDecoder {
+    decode = global.__puer_utf8_decode__;
+}
+
+class TextEncoder {
+    encode = global.__puer_utf8_encode__;
+}
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
+
 function loadFile(path) {
     let debugPath = [];
-    var content = loader.ReadFile(path, debugPath);
+    let content;
+    if (loader.ReadFileBytes) {
+        content = loader.ReadFileBytes(path, debugPath);
+    } else {
+        content = loader.ReadFile(path, debugPath);
+    }
+    if (!content || content.length == 0) {
+        throw new Error(`read module ${path} failed`);
+    }
     return { content: content, debugPath: debugPath[0] };
 }
 puer.loadFile = loadFile;
