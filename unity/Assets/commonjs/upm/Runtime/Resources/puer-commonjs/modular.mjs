@@ -42,7 +42,7 @@ function executeModule(fullPath, script, debugPath, sid) {
             // quickjs byte code
             wrapped = puer.evalScript(script, debugPath);
         } else {
-            script = __puer_utf8_decode__(script);
+            script = new TextDecoder().decode(script);
         }
     }
     wrapped =
