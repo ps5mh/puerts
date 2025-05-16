@@ -27,9 +27,9 @@ namespace Puerts
         private static Type persistentObjectInfoType;
         private static MethodInfo extensionMethodGetMethodInfo;
         private readonly int Idx;
-        IntPtr apis;
+        internal IntPtr apis;
         IntPtr nativeJsEnv;
-        IntPtr nativePesapiEnv;
+        internal IntPtr nativePesapiEnv;
         IntPtr nativeScriptObjectsRefsMgr;
         
         internal IntPtr isolate {

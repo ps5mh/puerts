@@ -526,7 +526,24 @@ namespace Puerts
             // } else {
             //     System.Console.WriteLine(type);
             }
-            
+
+            if (registerInfo == null && jsEnv.IsReflectionAPIEnabled())
+            {
+                PuertsDLL.RegisterProperty(jsEnv.isolate, typeId, "__p_isUseLazyAPI", true, returnTrue, 0, null, 0, false);
+                var translateFunc1 = jsEnv.GeneralSetterManager.GetTranslateFunc(typeof(Type));
+                PuertsDLL.RegisterProperty(jsEnv.isolate, typeId, "__p_innerType", true, callbackWrap, jsEnv.AddCallback((IntPtr isolate1, IntPtr info, IntPtr self, int argumentsLen) =>
+                {
+                    translateFunc1(jsEnv.Idx, isolate1, NativeValueApi.SetValueToResult, info, type);
+                }), null, 0, true);
+
+                if (type.IsEnum)
+                {
+                    PuertsDLL.RegisterProperty(jsEnv.isolate, typeId, "__p_isEnum", true, returnTrue, 0, null, 0, false);
+                }
+
+                return typeId;
+            }
+
             if (registerInfo == null || (sbr.needFillSlowBindingProperty.Count > 0 || sbr.needFillSlowBindingMethod.Count > 0))
             {
 

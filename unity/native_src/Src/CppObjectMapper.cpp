@@ -162,7 +162,7 @@ v8::MaybeLocal<v8::Function> FCppObjectMapper::CreateFunction(v8::Local<v8::Cont
     auto CallbackData = new PesapiCallbackData {Callback, Data, this};
     CallbackData->Finalize = Finalize;
     auto V8Data = v8::External::New(Isolate, &CallbackData->Data);
-    auto Template = v8::FunctionTemplate::New(Isolate, PesapiFunctionCallback, V8Data);
+    auto Template = v8::FunctionTemplate::New(Isolate, PesapiFunctionCallback, V8Data, v8::Local<v8::Signature>(), 0, v8::ConstructorBehavior::kThrow);
     Template->Set(Isolate, "__do_not_cache", v8::ObjectTemplate::New(Isolate));
     auto Ret = Template->GetFunction(Context);
     if (!Ret.IsEmpty())
@@ -252,6 +252,7 @@ v8::Local<v8::FunctionTemplate> FCppObjectMapper::GetTemplateOfClass(v8::Isolate
         auto Template = v8::FunctionTemplate::New(
             Isolate, CDataNew, v8::External::New(Isolate, &(const_cast<JSClassDefinition*>(ClassDefinition)->Data)));
         Template->InstanceTemplate()->SetInternalFieldCount(4);
+        Template->SetClassName(v8::String::NewFromUtf8(Isolate, ClassDefinition->ScriptName, v8::NewStringType::kNormal).ToLocalChecked());
 
         JSPropertyInfo* PropertyInfo = ClassDefinition->Properties;
         while (PropertyInfo && PropertyInfo->Name)

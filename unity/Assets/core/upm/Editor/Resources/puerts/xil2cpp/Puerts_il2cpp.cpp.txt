@@ -127,10 +127,10 @@ static MethodInfoHelper<Il2CppArray*(Il2CppString*)> g_ExtensionMethodGetHelper;
 static Il2CppClass* s_ParamArrayAttribute;
 static Il2CppClass* s_ExtensionAttribute;
 
-static bool RegisterType(Il2CppClass* klass);
+static bool RegisterType(Il2CppClass* klass, bool useLazyAPI);
 static bool ClassNotFoundCallback(const void* typeId)
 {
-    return RegisterType((Il2CppClass*)typeId);
+    return RegisterType((Il2CppClass*)typeId, false);
 }
 
 static void SetExtensionMethodGet(Il2CppReflectionMethod* method)
@@ -1606,7 +1606,9 @@ static bool ReflectionWrapper(struct pesapi_ffi* apis, MethodInfo* method, Il2Cp
                 return false;
             }
         }
-        for (int i = csArgStart; i < method->parameters_count; ++i)
+        bool isGetter = (method->flags & METHOD_ATTRIBUTE_SPECIAL_NAME) && strncmp("get_", method->name, 4) == 0 && method->parameters_count == 0;
+        bool isSetter = (method->flags & METHOD_ATTRIBUTE_SPECIAL_NAME) && strncmp("set_", method->name, 4) == 0 && method->parameters_count == 1;
+        for (int i = csArgStart; i < method->parameters_count && !isSetter && !isGetter; ++i)
         {
             auto parameterType = Method::GetParam(method, i);
             bool passedByReference = parameterType->byref;
@@ -1737,6 +1739,10 @@ handle_underlying:
                             return false;
                         }
                     }
+                    // else if ((parameterKlass == g_typeofArrayBuffer || parameterKlass == il2cpp_defaults.object_class) && ${invokePapi('is_binary')}(env, jsValue))
+                    // {
+                    //     continue;
+                    // }
                     else if (!${invokePapi('is_null')}(env, jsValue) && !${invokePapi('is_undefined')}(env, jsValue))
                     {
                         return false;
@@ -2576,7 +2582,7 @@ static const MethodInfo* MakeGenericMethodByConstraintedArguments(const MethodIn
     return MetadataCache::GetGenericInstanceMethod(method, genericArguments, count);
 }
 
-static bool RegisterType(Il2CppClass* klass)
+static bool RegisterType(Il2CppClass* klass, bool useLazyAPI)
 {
     Class::Init(klass);
 
@@ -2594,9 +2600,15 @@ static bool RegisterType(Il2CppClass* klass)
 
     auto AddMethod = [&](const MethodInfo* method, bool isGetter, bool isSetter, const char* name) -> bool
     {
-        //const char* methodName = (isGetter || isSetter) ? name + 4 : name;
+		//const char* methodName = (isGetter || isSetter) ? name + 4 : name;
+        if (method->flags & METHOD_ATTRIBUTE_ABSTRACT) {
+            return false;
+        }
         bool isExtensionMethod = method->klass != klass && IsExtensionMethod(method);
         bool isStatic = !Method::IsInstance(method) && !isExtensionMethod; 
+        if (useLazyAPI && (isStatic || !classInfo->IsValueType)) {
+            return false;
+        }
         for (int i = 0; i < classInfo->Methods.size(); ++i)
         {
             if (classInfo->Methods[i].IsStatic == isStatic && classInfo->Methods[i].IsGetter == isGetter && classInfo->Methods[i].IsSetter == isSetter && strcmp(classInfo->Methods[i].Name, name) == 0)
@@ -2661,7 +2673,7 @@ static bool RegisterType(Il2CppClass* klass)
                     }
                 }
             }
-            for (uint16_t i = 0; i < klass->field_count; i++)
+            for (uint16_t i = 0; i < klass->field_count && !useLazyAPI; i++)
             {
                 FieldInfo* field = &klass->fields[i];
                 bool isStatic = (field->type->attrs & FIELD_ATTRIBUTE_STATIC);
@@ -2748,6 +2760,7 @@ static bool RegisterType(Il2CppClass* klass)
     }
 
     size_t propertiesCount = gseters.size() + methods.size() + classInfo->Fields.size();
+    propertiesCount += useLazyAPI ? 1 : 0; // __p_isUseLazyAPI
     auto properties = pesapi_alloc_property_descriptors(propertiesCount);
     size_t pos = 0;
 
@@ -2773,6 +2786,13 @@ static bool RegisterType(Il2CppClass* klass)
         pesapi_set_property_info(properties, pos++, field.Data->FieldInfo->name, field.IsStatic,
             GetterCallback, SetterCallback, field.Data, field.Data, nullptr);
     }
+
+    if (useLazyAPI) {
+        pesapi_set_property_info(properties, pos++, "__p_isUseLazyAPI", true, [] (struct pesapi_ffi* apis, pesapi_callback_info info) {
+            ${invokePapi('add_return')}(info, ${invokePapi('create_boolean')}(${invokePapi('get_env')}(info), true));
+        }, nullptr, nullptr, nullptr, nullptr);
+    }
+
 
     pesapi_define_class(classInfo->TypeId, classInfo->SuperTypeId, classInfo->TypeId->name,
         classInfo->DelegateBridge ? &DelegateCtorCallback : &CtorCallback, classInfo->IsValueType ? &PApiFree : (pesapi_finalize)nullptr, propertiesCount, properties, classInfo);
@@ -2829,6 +2849,178 @@ void CleanupPendingKillScriptObjects(puerts::JsEnvPrivate* jsEnvPrivate)
 void SetLogCallbackInternal(puerts::LogCallbackFunc Log)
 {
     puerts::GLogCallback = Log;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+
+
+
+namespace puerts 
+{
+typedef void* (*RegisterAPI_Impl_Type)(void* type, const char* apiName, int* memberTypes, int flags);
+void* G_RegisterAPI_Impl = nullptr;
+
+enum MemberTypes {
+    Invalid = 0,
+    Constructor = 1,
+    Event = 2,
+    Field = 4,
+    Method = 8,
+    Property = 16,
+    TypeInfo = 32,
+    Custom = 64,
+    NestedType = 128,
+    All = 191,
+    StaticConst = 256, // defined and used by lazy_api
+    SetterOnly = 512, // defined and used by lazy_api
+};
+
+void LazyAPINative_SetEnabled(struct pesapi_ffi* apis, pesapi_callback_info info) {
+    auto env = ${invokePapi('get_env')}(info);
+    auto p0 = ${invokePapi('get_arg')}(info, 0);
+    //auto enabled = ${invokePapi('get_value_bool')}(env, p0);
+    
+    auto G = ${invokePapi('global')}(env);
+    ${invokePapi('set_property')}(env, G, "__is_lazyapi_enabled__", p0);
+}
+
+void LazyAPINative_RegisterAPI(struct pesapi_ffi* apis, pesapi_callback_info info)
+{
+    auto p0 = ${invokePapi('get_arg')}(info, 0);
+    auto p1 = ${invokePapi('get_arg')}(info, 1);
+    auto p2 = ${invokePapi('get_arg')}(info, 2);
+    auto p3 = ${invokePapi('get_arg')}(info, 3);
+
+    auto env = ${invokePapi('get_env')}(info);
+    auto cstype = JsValueToCSRef(apis, il2cpp_defaults.systemtype_class, env, p0);
+    auto name = converter::Converter<Il2CppString*>::toCpp(apis, env, p1);
+    auto memberTypes = ${invokePapi('get_value_int32')}(env, ${invokePapi('get_property_uint32')}(env, p2, 0));
+    auto flags = ${invokePapi('get_value_int32')}(env, p3);
+
+    auto impl = (MethodInfo*)(G_RegisterAPI_Impl);
+
+    if (impl == nullptr) {
+        size_t assembliesCount = 0;
+        const Il2CppAssembly** assemblies = il2cpp_domain_get_assemblies(il2cpp_domain_get(), &assembliesCount);
+        for (int i = 0; i < assembliesCount; i++)
+        {
+            const Il2CppImage* image = il2cpp_assembly_get_image(assemblies[i]);
+            Il2CppClass* klass = il2cpp_class_from_name(image, "Puerts", "LazyAPIUtility");
+            if (klass != nullptr)
+            {
+                G_RegisterAPI_Impl = impl = (MethodInfo*)il2cpp_class_get_method_from_name(klass, "RegisterAPI_Impl", 4);
+            }
+        }
+    }
+    Il2CppObject* rtn = NULL;
+
+    void** args = impl->parameters_count > 0 ? (void**)alloca(sizeof(void*) * impl->parameters_count) : nullptr;
+    args[0] = cstype;
+    args[1] = name;
+    args[2] = &memberTypes;
+    args[3] = &flags;
+    impl->invoker_method(impl->methodPointer, impl, nullptr, args, &rtn);
+    ${invokePapi('set_property_uint32')}(env, p2, 0, ${invokePapi('create_int32')}(env, memberTypes));
+    if ((memberTypes & Field) != 0) {
+        if ((memberTypes & StaticConst) != 0) {
+            // const field
+            ${invokePapi('add_return')}(info, CSRefToJsValue(apis, env, rtn->klass, rtn));
+        }
+        else {
+            // field
+            FieldInfo* field = ((Il2CppReflectionField*)rtn)->field;
+            FieldWrapData* fieldData = new FieldWrapData();
+            fieldData->Getter = &ReflectionGetFieldWrapper;
+            fieldData->Setter = &ReflectionSetFieldWrapper;
+            fieldData->FieldInfo = field;
+            fieldData->Offset = (int32_t)Field::GetOffset(field) - (Class::IsValuetype(Field::GetParent(field)) ? sizeof(Il2CppObject) : 0);;
+            fieldData->TypeInfo = Class::FromIl2CppType(field->type, false);;
+            auto func = ${invokePapi('create_function')}(env, [] (struct pesapi_ffi* apis, pesapi_callback_info info) {
+                auto env = ${invokePapi('get_env')}(info);
+                auto arglen = ${invokePapi('get_args_len')}(info);
+                if (arglen == 1) {
+                    SetterCallback(apis, info);
+                } else {
+                    GetterCallback(apis, info);
+                }
+            }, fieldData, [] (struct pesapi_ffi* apis, void* data, void* env_private) {
+                delete (FieldWrapData*)data;
+            });
+            ${invokePapi('add_return')}(info, func);
+        }
+    }
+    else if ((memberTypes & Property) != 0 || (memberTypes & Method) != 0)
+    {
+        // copy code from createFunctionWrapper
+        CSharpMethodInfo* csharpMethodInfo = nullptr;
+        Il2CppObject** arr = reinterpret_cast<Il2CppObject**>(il2cpp::vm::Array::GetFirstElementAddress((Il2CppArray*)rtn));
+        auto arrLen = il2cpp::vm::Array::GetLength((Il2CppArray*)rtn);
+        for (int i = 0; i < arrLen; ++i)
+        {
+            Il2CppReflectionMethod* reflectionMethod = (Il2CppReflectionMethod*)arr[i];
+            if (!reflectionMethod || !Class::IsAssignableFrom(il2cpp_defaults.method_info_class, reflectionMethod->object.klass))
+            {
+                ${invokePapi('throw_by_string')}(info, "expect a MethodInfo");
+                FreeCSharpMethodInfo(csharpMethodInfo);
+                csharpMethodInfo = nullptr;
+                break;
+            }
+            else
+            {
+                bool isStatic = !il2cpp::vm::Method::IsInstance(reflectionMethod->method);
+                bool needBoxing = reflectionMethod->method->klass == il2cpp_defaults.object_class;
+                if (csharpMethodInfo == nullptr)
+                {
+                    csharpMethodInfo = new CSharpMethodInfo{ reflectionMethod->method->name, isStatic, false, false, needBoxing };
+                }
+                csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(reflectionMethod->method, IsExtensionMethod(reflectionMethod->method)));
+            }
+        }
+        if (csharpMethodInfo)
+        {
+            csharpMethodInfo->OverloadDatas.push_back(nullptr);
+            auto func = ${invokePapi('create_function')}(env, MethodCallback, csharpMethodInfo, FunctioFinalize);
+            ${invokePapi('add_return')}(info, func);
+        }
+    }
+    else if (rtn != nullptr) {
+        ${invokePapi('add_return')}(info, CSRefToJsValue(apis, env, rtn->klass, rtn));
+    }
+}
+}
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+static std::function<bool(const void*)> ClassNotFoundCallbackFunc = [] (const void* typeId) { return puerts::RegisterType((Il2CppClass*)typeId, false); };
+static bool ClassNotFoundCallbackWrap(const void* typeId){ return ClassNotFoundCallbackFunc(typeId); }
+void RegisterLazyApiImpl(struct pesapi_ffi* apis, pesapi_env_ref envRef) {
+    puerts::AutoValueScope ValueScope(apis, envRef);
+    auto env = ${invokePapi('get_env_from_ref')}(envRef);
+    ClassNotFoundCallbackFunc = [=](const void* typeId) {
+        puerts::AutoValueScope ValueScope(apis, envRef);
+        auto env = ${invokePapi('get_env_from_ref')}(envRef);
+        bool useLazyAPI = ${invokePapi('get_value_bool')}(env, ${invokePapi('get_property')}(env, ${invokePapi('global')}(env), "__is_lazyapi_enabled__"));
+        return puerts::RegisterType((Il2CppClass*)typeId, useLazyAPI);
+    };
+	pesapi_on_class_not_found(ClassNotFoundCallbackWrap);
+
+    auto lazyAPINative_RegisterAPI = ${invokePapi('create_function')}(env, puerts::LazyAPINative_RegisterAPI, nullptr, nullptr);
+    auto lazyAPINative_SetEnabled = ${invokePapi('create_function')}(env, puerts::LazyAPINative_SetEnabled, nullptr, nullptr);
+
+    pesapi_value global = ${invokePapi('global')}(env);
+    auto cs = ${invokePapi('get_property')}(env, global, "CS");
+    auto puerts = ${invokePapi('get_property')}(env, cs, "Puerts");
+
+    auto lazyAPINative = ${invokePapi('create_object')}(env);
+    ${invokePapi('set_property')}(env, lazyAPINative, "RegisterAPI", lazyAPINative_RegisterAPI);
+    ${invokePapi('set_property')}(env, lazyAPINative, "SetEnabled", lazyAPINative_SetEnabled);
+    ${invokePapi('set_property')}(env, puerts, "LazyAPINative", lazyAPINative);
 }
 
 #ifdef __cplusplus

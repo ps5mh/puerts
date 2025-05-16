@@ -176,13 +176,26 @@ function makeGeneric(genericTypeInfo, ...genericArgs) {
 
         let typName = genericTypeInfo.get('$name')
         let typ = puer.loadType(typName, ...genericArgs)
+        
+        let currentCls = typ, parentPrototype = Object.getPrototypeOf(currentCls.prototype);
+
+        // 此处parentPrototype如果是一个泛型，会丢失父父的继承信息，必须循环找下去
+        while (parentPrototype) {
+            Object.setPrototypeOf(currentCls, parentPrototype.constructor);//v8 api的inherit并不能把静态属性也继承，通过这种方式修复下
+            currentCls.__static_inherit__ = true;
+
+            currentCls = parentPrototype.constructor;
+            parentPrototype = Object.getPrototypeOf(currentCls.prototype);
+            if (currentCls === Object || currentCls === Function || currentCls.__static_inherit__) break;
+        }
+
         let csType =  getType(typ)
         if (getType(csharpModule.System.Collections.IEnumerable).IsAssignableFrom(csType)) {
             typ.prototype[Symbol.iterator] = function () {
                 return genIterator(this);
             }
         }
-        
+
         let nestedTypes = puer.getNestedTypes(csType);
         if (nestedTypes) {
             for(var i = 0; i < nestedTypes.Length; i++) {
@@ -256,6 +269,7 @@ function doExtension(cls, extension) {
     })
 }
 
+puer.$csTypeToClass = csTypeToClass;
 puer.$ref = ref;
 puer.$unref = unref;
 puer.$set = setref;
