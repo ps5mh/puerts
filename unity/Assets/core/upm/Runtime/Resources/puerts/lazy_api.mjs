@@ -1,0 +1,536 @@
+/**
+ * Lazy API Utilities
+ * @author bingcongni
+ * @see https://iwiki.woa.com/p/4008334693
+ */
+
+(function () {
+    const logger = global.console;
+    // declear c# implemented APIs defined in DynamicBinder.cs
+    const bridge = CS.Puerts.LazyAPINative;
+    const CSIMPL = {
+        /**
+         * @returns fieldvalue, if memberType === (MemberTypes.Field | MemberTypes.StaticConst)
+         *          type, if memberType === MemberTypes.NestedType
+         *          funcion, if memberType === MemberTypes.Field || memberType === MemberTypes.Property || memberType === MemberTypes.Method
+         *          null, if memberType === 0
+         */
+        RegisterAPI(csType, apiName, memberType, bindingFlags) {
+            return bridge.RegisterAPI(csType, apiName, memberType, bindingFlags);
+        },
+        ClearAllAPI: bridge.ClearAllAPI,
+        SetEnabled: bridge.SetEnabled,
+    };
+    const PUERTS_JS_CLASS_INNER_FIELDS = new Set([
+        'name', // @see Function.name
+        'length', // @see Function.length
+        '__static_inherit__', // set by csharp.mjs.txt, to indicate this class has been imported by CSharp.xxxxx access
+        '__puertsMetadata', // set by JSEngine.cpp, { classid: number, readonlyStaticMembers: Set<string> }
+        '__p_isEnum', // set by puerts.TypeRegister::RegisterType, to indicate this class is an enum
+        '__p_innerType', // set by puerts.TypeRegister::RegisterType, a property returns corresponding C# Type. __puerts.Array is a special case which does not contain this field
+        '__p_isUseLazyAPI', // (added by lazy_api) set by puerts.TypeRegister::RegisterType, to indicate this class can be extended by lazy api feature
+        '__p_notFoundAPIList', // (added by lazy_api) set by addAPIHierarchy, if not foud such api on this class and parents
+        '__p_extensionAPIList', // (added by lazy_api) set by addExtensionAPI
+    ]);
+    const LOG_FUNCS = {
+        [0 /* LL.I */]: logger.log,
+        [1 /* LL.D */]: logger.log,
+        [2 /* LL.W */]: logger.warn,
+        [3 /* LL.E */]: logger.error,
+    };
+    const getClassName = (jsClass) => jsClass.name.split(',')[0];
+    function log(ll, info, jsClass, apiName, isStatic) {
+        if (ll < config.LL)
+            return;
+        let logstr = info;
+        if (jsClass && apiName) {
+            const className = getClassName(jsClass);
+            logstr = `${className}::${apiName.toString()} ${isStatic ? 'static' : 'instance'} ${info}`;
+        }
+        LOG_FUNCS[ll](`[JS] [lazy_api] ${logstr}\n ${new Error().stack}`);
+    }
+    // #endregion
+    function wrapAPI(jsClass, apiName, api, isStatic, csMemberType, bflags) {
+        const addAPITarget = isStatic ? jsClass : jsClass.prototype;
+        // const api = CSIMPL.RegisterAPI(csType, apiName, csMemberType, bflags);
+        if (api === null || api === undefined) {
+            3 /* LL.E */ >= config.LL && log(3 /* LL.E */, 'RegisterAPI inner failed', jsClass, apiName, isStatic);
+            return false;
+        }
+        if (csMemberType === (4 /* MemberTypes.Field */ | 256 /* MemberTypes.StaticConst */)) {
+            Object.defineProperty(addAPITarget, apiName, {
+                value: api,
+                writable: false,
+                configurable: true,
+                enumerable: false,
+            });
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'getter register const api success', jsClass, apiName, isStatic);
+            return true;
+        }
+        if (csMemberType === 128 /* MemberTypes.NestedType */ && config.IS_INNER_CLASS_LAZY_ENABLED && isStatic) {
+            // try access api as inner class
+            const ok = addNestedType(jsClass, apiName, api);
+            return ok;
+        }
+        if (csMemberType === 4 /* MemberTypes.Field */ || csMemberType === 16 /* MemberTypes.Property */) {
+            Object.defineProperty(addAPITarget, apiName, {
+                get: api,
+                set: api,
+                configurable: true,
+                enumerable: false,
+            });
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'getter/setter register api success', jsClass, apiName, isStatic);
+            return true;
+        }
+        if (csMemberType === 8 /* MemberTypes.Method */) {
+            const isExtensionMethod = !isStatic && (bflags & 8 /* BindingFlags.Static */);
+            if (isExtensionMethod) {
+                const extApi = function (...args) {
+                    return api.call(null, this, ...args);
+                };
+                Reflect.set(Object, apiName, extApi, addAPITarget);
+                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'extension method register api success', jsClass, apiName, isStatic);
+                return true;
+            }
+            if (config.SET_LAZY_API_NAME) {
+                const apiNamed = eval(`(api) => {return function ${apiName}(...args){return api.call(this, ...args)}}`)(api);
+                Reflect.set(Object, apiName, apiNamed, addAPITarget);
+                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'method register api success', jsClass, apiName, isStatic);
+                return true;
+            }
+            Reflect.set(Object, apiName, api, addAPITarget);
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'method register api success', jsClass, apiName, isStatic);
+            return true;
+        }
+        return false;
+    }
+    function addExtensionAPI(jsClass, apiName, extClses) {
+        if (!extClses)
+            return false;
+        1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'check extension class', jsClass, apiName, false);
+        const typesRef = puerts.$ref(8 /* MemberTypes.Method */);
+        const flags = 16 /* BindingFlags.Public */ | 2 /* BindingFlags.DeclaredOnly */ | 8 /* BindingFlags.Static */;
+        let api;
+        for (const extCls of extClses) {
+            if (!extCls)
+                continue;
+            const tryExtType = puerts.$typeof(extCls);
+            if (!tryExtType)
+                continue;
+            api = CSIMPL.RegisterAPI(tryExtType, apiName, typesRef, flags);
+            if (puerts.$unref(typesRef) === 8 /* MemberTypes.Method */) {
+                break;
+            }
+        }
+        if (api === null || api === undefined)
+            return false;
+        const ok = wrapAPI(jsClass, apiName, api, false, 8 /* MemberTypes.Method */, flags);
+        if (ok) {
+            if (!Object.prototype.hasOwnProperty.call(jsClass, '__p_isUseLazyAPI')) {
+                if (!Object.prototype.hasOwnProperty.call(jsClass, '__p_extensionAPIList')) {
+                    const cls = jsClass;
+                    cls.__p_extensionAPIList = [];
+                }
+                jsClass.__p_extensionAPIList.push(apiName);
+            }
+            return true;
+        }
+        return false;
+    }
+    function addEnumAPI(jsClass, apiName) {
+        if (!isNaN(+apiName)) {
+            const csType = puerts.$typeof(jsClass);
+            if (!csType)
+                return false;
+            const enumName = CS.System.Enum.GetName(csType, new CS.Puerts.Int32Value(+apiName));
+            Object.defineProperty(jsClass, apiName, {
+                value: enumName,
+                writable: false,
+                configurable: true,
+                enumerable: false,
+            });
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'enum(int32 key) register api success', jsClass, apiName, true);
+            return true;
+        }
+        const ok = addAPI(jsClass, apiName, true, 4 /* MemberTypes.Field */);
+        if (ok) {
+            return true;
+        }
+        return false;
+    }
+    function addGenericAPI(jsClass, apiName, isStatic) {
+        const apiNameImpl = apiName.substring(1);
+        const api = function (typeArg, ...args) {
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, `call generic method: ${typeArg.length}`, jsClass, apiName, isStatic);
+            const apiImpl = puerts.$genericMethod(jsClass, apiNameImpl, ...typeArg);
+            return apiImpl.call(this, ...args);
+        };
+        Reflect.set(Object, apiName, api, isStatic ? jsClass : jsClass.prototype);
+        1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'generic method register api success', jsClass, apiName, isStatic);
+        return true;
+    }
+    function addNestedType(jsClass, apiName, innerType) {
+        const csType = puerts.$typeof(jsClass);
+        const flags = 4 /* BindingFlags.Instance */ | 8 /* BindingFlags.Static */ | 16 /* BindingFlags.Public */;
+        innerType = innerType !== null && innerType !== void 0 ? innerType : csType === null || csType === void 0 ? void 0 : csType.GetNestedType(apiName.replace('$', '`'), flags);
+        if (innerType) {
+            const api = CS[innerType.FullName];
+            Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
+            // Reflect.set(Object, apiName, api, jsClass);
+            delete CS[innerType.FullName];
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success', jsClass, apiName, true);
+            return true;
+        }
+    }
+    function addPrivateInterfaceProperty(jsClass, apiName) {
+        var _a;
+        const csType = puerts.$typeof(jsClass);
+        const flagsNonPub = 4 /* BindingFlags.Instance */ | 32 /* BindingFlags.NonPublic */ | 2 /* BindingFlags.DeclaredOnly */;
+        const properties = (_a = csType === null || csType === void 0 ? void 0 : csType.GetProperties(flagsNonPub)) !== null && _a !== void 0 ? _a : [];
+        for (let i = 0; i < properties.Length; i++) {
+            const prop = properties.get_Item(i);
+            if (prop.Name.endsWith("." + apiName)) {
+                const api = CSIMPL.RegisterAPI(csType, prop.Name, puerts.$ref(16 /* MemberTypes.Property */), flagsNonPub);
+                Object.defineProperty(jsClass.prototype, apiName, {
+                    get: api,
+                    set: api,
+                    configurable: true,
+                    enumerable: false,
+                });
+                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'getter/setter register api success(private)', jsClass, apiName, false);
+                return true;
+            }
+        }
+        return false;
+    }
+    function addAPI(jsClass, apiName, isStatic, filterMemberTypes) {
+        1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'try api register', jsClass, apiName, isStatic);
+        if (jsClass === CS.System.Object) {
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'api register fail reach System.Object', jsClass, apiName, isStatic);
+            return false;
+        }
+        if (Object.prototype.hasOwnProperty.call(jsClass, '__p_notFoundAPIList') &&
+            jsClass.__p_notFoundAPIList.get(apiName) === isStatic) {
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'api register fail __p_notFoundAPIList', jsClass, apiName, isStatic);
+            return false;
+        }
+        if (!Object.prototype.hasOwnProperty.call(jsClass, '__p_isUseLazyAPI')) {
+            if (!isStatic) {
+                // try add as extension api, even if this class was not registered as __p_isUseLazyAPI
+                const ok = addExtensionAPI(jsClass, apiName, config.extensions.get(jsClass));
+                if (ok)
+                    return ok;
+            }
+            else if (isStatic && config.IS_INNER_CLASS_LAZY_ENABLED) {
+                // try add as inner class api when IS_INNER_CLASS_LAZY_ENABLED, even if this class was not registered as __p_isUseLazyAPI
+                const ok = addNestedType(jsClass, apiName);
+                if (ok)
+                    return ok;
+            }
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'api register fail __p_isUseLazyAPI', jsClass, apiName, isStatic);
+            return undefined;
+        }
+        1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'begin api register', jsClass, apiName, isStatic);
+        const csType = puerts.$typeof(jsClass);
+        if (!csType) {
+            2 /* LL.W */ >= config.LL && log(2 /* LL.W */, 'bad state, puerts.$typeof(jsClass) is null', jsClass, apiName, isStatic);
+            return false;
+        }
+        const bindingFlags = 16 /* BindingFlags.Public */ | 2 /* BindingFlags.DeclaredOnly */
+            | (isStatic ? 8 /* BindingFlags.Static */ : 4 /* BindingFlags.Instance */)
+            | 32 /* BindingFlags.NonPublic */; // to support IEnumerator.MoveNext
+        const memberTypeRef = puerts.$ref(filterMemberTypes);
+        const api = CSIMPL.RegisterAPI(csType, apiName, memberTypeRef, bindingFlags);
+        const csMemberType = puerts.$unref(memberTypeRef);
+        1 /* LL.D */ >= config.LL && log(1 /* LL.D */, `get member type: ${csMemberType}`, jsClass, apiName, isStatic);
+        if (csMemberType === 0 /* MemberTypes.Invalid */ || api === null || api === undefined) {
+            if (!isStatic) {
+                let ok = addExtensionAPI(jsClass, apiName, config.extensions.get(jsClass));
+                if (ok)
+                    return ok;
+            }
+        }
+        else {
+            const ok = wrapAPI(jsClass, apiName, api, isStatic, csMemberType, bindingFlags);
+            if (ok)
+                return ok;
+        }
+        // return undefined will search parent
+        return undefined;
+    }
+    function addAPIHierarchy(jsClass, apiName, isStatic, filterMemberTypes) {
+        try {
+            if (typeof apiName !== 'string')
+                return false;
+            if (Object.prototype.hasOwnProperty.call(jsClass, '__p_notFoundAPIList') &&
+                jsClass.__p_notFoundAPIList.get(apiName) === isStatic) {
+                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'api register fail __p_notFoundAPIList', jsClass, apiName, isStatic);
+                return false;
+            }
+            let begin;
+            if (config.LAZY_API_PROFILE_TIMER !== -1)
+                begin = Date.now();
+            if (config.IS_SIMPLIFIED_GENERIC_ENABLED && apiName.startsWith('$')) {
+                const ok = addGenericAPI(jsClass, apiName, isStatic);
+                ok && config.TO_CLEAR_API_JSCLASSES.add(jsClass);
+                if (config.LAZY_API_PROFILE_TIMER !== -1)
+                    config.LAZY_API_PROFILE_TIMER += Date.now() - begin;
+                return ok;
+            }
+            if (IS_LAZY_API_ENABLED) {
+                if (isStatic && Object.prototype.hasOwnProperty.call(jsClass, '__p_isEnum')) {
+                    const ok = addEnumAPI(jsClass, apiName);
+                    if (ok) {
+                        config.TO_CLEAR_API_JSCLASSES.add(jsClass);
+                        if (config.LAZY_API_PROFILE_TIMER !== -1)
+                            config.LAZY_API_PROFILE_TIMER += Date.now() - begin;
+                        return ok;
+                    }
+                }
+                let curClass = jsClass;
+                let level = 0;
+                while (true) {
+                    const ok = addAPI(curClass, apiName, isStatic, filterMemberTypes);
+                    if (ok === false)
+                        break;
+                    else if (ok) {
+                        if (level > 1) {
+                            2 /* LL.W */ >= config.LL &&
+                                log(2 /* LL.W */, `slow addApi recursive level: ${level}`, jsClass, apiName, isStatic);
+                        }
+                        config.TO_CLEAR_API_JSCLASSES.add(curClass);
+                        if (config.LAZY_API_PROFILE_TIMER !== -1)
+                            config.LAZY_API_PROFILE_TIMER += Date.now() - begin;
+                        return ok;
+                    }
+                    else if (ok === undefined) {
+                        curClass = Object.getPrototypeOf(curClass.prototype).constructor;
+                        level = level + 1;
+                    }
+                }
+            }
+            if (!isStatic) {
+                // to support IEnumerator.Current
+                const ok = addPrivateInterfaceProperty(jsClass, apiName);
+                if (ok)
+                    return ok;
+            }
+            if (!Object.prototype.hasOwnProperty.call(jsClass, '__p_notFoundAPIList')) {
+                const cls = jsClass;
+                cls.__p_notFoundAPIList = new Map();
+            }
+            jsClass.__p_notFoundAPIList.set(apiName, isStatic);
+            2 /* LL.W */ >= config.LL && log(2 /* LL.W */, 'register api failed!', jsClass, apiName, isStatic);
+            if (config.LAZY_API_PROFILE_TIMER !== -1)
+                config.LAZY_API_PROFILE_TIMER += Date.now() - begin;
+        }
+        catch (e) {
+            3 /* LL.E */ >= config.LL && log(3 /* LL.E */, `register api failed! With exception: ${e}`, jsClass, apiName.toString(), isStatic);
+        }
+        return false;
+    }
+    function setupSystemObjectInstanceLazyProxy() {
+        if (puerts.__instance_lazy_proxy__)
+            return;
+        const instanceProxyHandler = {};
+        instanceProxyHandler.get = function (t, p, r) {
+            if (p === 'prototype') {
+                return null;
+            }
+            const result = Reflect.get(t, p, r);
+            if (result !== undefined)
+                return result;
+            const jsClass = r.constructor;
+            let addAPIMt = 8 /* MemberTypes.Method */ | 4 /* MemberTypes.Field */ | 16 /* MemberTypes.Property */;
+            return addAPIHierarchy(jsClass, p, false, addAPIMt) ? r[p] : undefined;
+        };
+        instanceProxyHandler.set = function (t, p, v, r) {
+            const receiver = r;
+            if (Reflect.has(t, p))
+                return Reflect.set(t, p, v, r);
+            const jsClass = r.constructor;
+            return addAPIHierarchy(jsClass, p, false, 4 /* MemberTypes.Field */ | 16 /* MemberTypes.Property */)
+                ? ((receiver[p] = v), true)
+                : Reflect.set(t, p, v, r);
+        };
+        puerts.__instance_lazy_proxy__ = new Proxy({}, instanceProxyHandler);
+        Object.setPrototypeOf(CS.System.Object.prototype, puerts.__instance_lazy_proxy__);
+    }
+    function setupSystemObjectStaticLazyProxy() {
+        if (puerts.__static_lazy_proxy__)
+            return;
+        const staticProxyHandler = {};
+        staticProxyHandler.get = function (t, p, r) {
+            if (PUERTS_JS_CLASS_INNER_FIELDS.has(p))
+                return null;
+            const result = Reflect.get(t, p, r);
+            if (result !== undefined)
+                return result;
+            let addAPIMt = 8 /* MemberTypes.Method */ | 4 /* MemberTypes.Field */ | 16 /* MemberTypes.Property */;
+            config.IS_INNER_CLASS_LAZY_ENABLED && (addAPIMt |= 128 /* MemberTypes.NestedType */);
+            return addAPIHierarchy(r, p, true, addAPIMt) ? r[p] : undefined;
+        };
+        staticProxyHandler.set = function (t, p, v, r) {
+            if (Reflect.has(t, p) ||
+                PUERTS_JS_CLASS_INNER_FIELDS.has(p) ||
+                // in csharp.mjs:csTypeToClass, enum values will be set, skip api lookup
+                Object.prototype.hasOwnProperty.call(r, '__p_isEnum')) {
+                return Reflect.set(t, p, v, r);
+            }
+            const receiver = r;
+            return addAPIHierarchy(r, p, true, 4 /* MemberTypes.Field */ | 16 /* MemberTypes.Property */)
+                ? ((receiver[p] = v), true)
+                : Reflect.set(t, p, v, r);
+        };
+        puerts.__static_lazy_proxy__ = new Proxy({}, staticProxyHandler);
+        Object.setPrototypeOf(CS.System.Object, puerts.__static_lazy_proxy__);
+    }
+    function setupSystemObjectInnerClassLazyAccess() {
+        var _a;
+        // temporary way to patch getNestedTypes in csTypeToClass, to implement delayed inner class
+        (_a = puerts.__originalPuertsGetNestedTypes) !== null && _a !== void 0 ? _a : (puerts.__originalPuertsGetNestedTypes = puerts.getNestedTypes);
+        function getNestedTypesLazyInnerPatched(csTypeOrName) {
+            if (config.IS_INNER_CLASS_LAZY_ENABLED) {
+                return null;
+            }
+            return puerts.__originalPuertsGetNestedTypes(csTypeOrName);
+        }
+        puerts.getNestedTypes = getNestedTypesLazyInnerPatched;
+    }
+    function setupExtensionAPIAccessHook() {
+        var _a;
+        (_a = puerts.__originalPuerts$extension) !== null && _a !== void 0 ? _a : (puerts.__originalPuerts$extension = puerts.$extension);
+        function $extensionPatched(cls, extension) {
+            var _a;
+            if (IS_LAZY_API_ENABLED) {
+                const arr = (_a = config.extensions.get(cls)) !== null && _a !== void 0 ? _a : [];
+                arr.push(extension);
+                config.extensions.set(cls, arr);
+                return;
+            }
+            return puerts.__originalPuerts$extension(cls, extension);
+        }
+        puerts.$extension = $extensionPatched;
+    }
+    function setupGenericMethodCache() {
+        var _a;
+        (_a = puerts.__originalPuerts$genericMethod) !== null && _a !== void 0 ? _a : (puerts.__originalPuerts$genericMethod = puerts.$genericMethod);
+        function $genericMethodCached(cls, methodName, ...args) {
+            const apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
+            if (Object.prototype.hasOwnProperty.call(cls, apiName)) {
+                return cls[apiName];
+            }
+            const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+            Reflect.set(Object, apiName, api, cls);
+            return api;
+        }
+        puerts.$genericMethod = $genericMethodCached;
+    }
+    // setup
+    setupGenericMethodCache();
+    setupExtensionAPIAccessHook();
+    setupSystemObjectInnerClassLazyAccess();
+    setupSystemObjectInstanceLazyProxy();
+    setupSystemObjectStaticLazyProxy();
+    let IS_LAZY_API_ENABLED = false;
+    const config = {
+        IS_INNER_CLASS_LAZY_ENABLED: true, // optimize class import performance/memory usage, by delay import inner classes
+        IS_CLEAR_LAZY_API_ENABLED: true, // optimize memory usage, by manually trigger LazyAPI.Clear()
+        IS_SIMPLIFIED_GENERIC_ENABLED: true, // optimize code style, while accessing generic methods
+        LAZY_API_PROFILE_TIMER: -1, // set to -1 to disable profiler
+        SET_LAZY_API_NAME: false,
+        TO_CLEAR_API_JSCLASSES: new Set(), // for switch IS_CLEAR_LAZY_API_ENABLED
+        extensions: new Map(),
+        LL: 3 /* LL.E */, // LogLevel, set to LL.I to enable all logs
+    };
+    function SetEnabled(enabled, debug) {
+        config.LL = debug ? 0 /* LL.I */ : 3 /* LL.E */;
+        0 /* LL.I */ >= config.LL && log(0 /* LL.I */, `enableLazyAPI: ${enabled}`);
+        CSIMPL.SetEnabled(enabled);
+        IS_LAZY_API_ENABLED = enabled;
+    }
+    function Clear() {
+        if (!config.IS_CLEAR_LAZY_API_ENABLED)
+            return '';
+        const clearInfo = [];
+        for (const jsClass of config.TO_CLEAR_API_JSCLASSES) {
+            if (!Object.prototype.hasOwnProperty.call(jsClass, '__p_isUseLazyAPI')) {
+                if (Object.prototype.hasOwnProperty.call(jsClass, '__p_extensionAPIList')) {
+                    for (const apiName of jsClass.__p_extensionAPIList) {
+                        0 /* LL.I */ >= config.LL && log(0 /* LL.I */, `cleared api`, jsClass, apiName, false);
+                        clearInfo.push(`[lazy_api] CSharp.${getClassName(jsClass)}, ${apiName}, false`);
+                        delete jsClass.prototype[apiName];
+                    }
+                }
+                continue;
+            }
+            for (const [apiName, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(jsClass))) {
+                if (!descriptor.configurable || PUERTS_JS_CLASS_INNER_FIELDS.has(apiName))
+                    continue;
+                0 /* LL.I */ >= config.LL && log(0 /* LL.I */, `cleared api`, jsClass, apiName, true);
+                clearInfo.push(`[lazy_api] ${getClassName(jsClass)}::${apiName} 'static' cleared api`);
+                delete jsClass[apiName];
+            }
+            for (const [apiName, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(jsClass.prototype))) {
+                if (!descriptor.configurable || apiName === 'constructor')
+                    continue;
+                0 /* LL.I */ >= config.LL && log(0 /* LL.I */, `cleared api`, jsClass, apiName, false);
+                clearInfo.push(`[lazy_api] ${getClassName(jsClass)}::${apiName} 'instance' cleared api`);
+                delete jsClass.prototype[apiName];
+            }
+        }
+        CSIMPL.ClearAllAPI();
+        config.TO_CLEAR_API_JSCLASSES.clear();
+        0 /* LL.I */ >= config.LL && log(0 /* LL.I */, `cleared api total count: ${clearInfo.length}`);
+        clearInfo.push(`[lazy_api] cleared api total count: ${clearInfo.length}`);
+        return clearInfo.join('\n');
+    }
+    function Dump() {
+        if (!config.IS_CLEAR_LAZY_API_ENABLED)
+            return '';
+        const dumpInfo = [];
+        const addDumpInfo = (jsClass, apiName, isStatic) => {
+            const clsName = getClassName(jsClass);
+            if (clsName.includes('`')) {
+                dumpInfo.push(`// AddAPI(CSharp.${clsName}, '${apiName}', ${isStatic})`);
+            }
+            else {
+                dumpInfo.push(`AddAPI(CSharp.${clsName}, '${apiName}', ${isStatic})`);
+            }
+        };
+        for (const jsClass of config.TO_CLEAR_API_JSCLASSES) {
+            if (!Object.prototype.hasOwnProperty.call(jsClass, '__p_isUseLazyAPI'))
+                continue;
+            for (const [apiName, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(jsClass))) {
+                if (PUERTS_JS_CLASS_INNER_FIELDS.has(apiName))
+                    continue;
+                if (!descriptor.configurable)
+                    continue;
+                addDumpInfo(jsClass, apiName, true);
+            }
+            for (const [apiName, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(jsClass.prototype))) {
+                if (apiName === 'constructor')
+                    continue;
+                if (!descriptor.configurable)
+                    continue;
+                addDumpInfo(jsClass, apiName, false);
+            }
+        }
+        const csApplication = CS.UnityEngine.Application;
+        const path = `${csApplication.dataPath}/../js_registered.txt`;
+        3 /* LL.E */ >= config.LL && log(3 /* LL.E */, `output dump: ${path}`);
+        CS.System.IO.File.WriteAllText(path, dumpInfo.join('\n'));
+    }
+    class LazyAPI {
+    }
+    LazyAPI.config = config;
+    LazyAPI.Clear = Clear;
+    LazyAPI.Dump = Dump;
+    LazyAPI.SetEnabled = SetEnabled;
+    LazyAPI.AddAPI = addAPIHierarchy;
+    puerts.LazyAPI = LazyAPI;
+    // make sure lazy api takes effect ASAP
+    LazyAPI.SetEnabled(true);
+    return LazyAPI;
+})();
+export {};
