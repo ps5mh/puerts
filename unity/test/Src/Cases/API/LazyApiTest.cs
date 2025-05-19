@@ -29,5 +29,24 @@ console.log(screenProps);
             Assert.True(ok);
             jsEnv.Tick();
         }
+
+        [Test]
+        public void LazyApiTestPerformance()
+        {
+            var jsEnv = UnitTestEnv.GetEnv();
+            Puerts.LazyAPI.RegisterLazyAPI(jsEnv);
+            jsEnv.ExecuteModule("puerts/lazy_api.mjs");
+            var ok = jsEnv.Eval<bool>(@"
+puerts.LazyAPI.SetEnabled(true);
+
+var begin = Date.now();
+for (let i = 0; i < 10000; i++) {
+    var a = CS.UnityEngine.Application.isPlaying;
+    delete CS.UnityEngine.Application.isPlaying;
+}
+console.log(Date.now() - begin);
+            ");
+            jsEnv.Tick();
+        }
     }
 }
