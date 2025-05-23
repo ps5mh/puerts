@@ -58,16 +58,6 @@ global.__puertsGetLastException = undefined;
 let loader = global.__tgjsGetLoader();
 global.__tgjsGetLoader = undefined;
 
-class TextDecoder {
-    decode = global.__puer_utf8_decode__;
-}
-
-class TextEncoder {
-    encode = global.__puer_utf8_encode__;
-}
-global.TextEncoder = TextEncoder;
-global.TextDecoder = TextDecoder;
-
 function loadFile(path) {
     let debugPath = [];
     let content;

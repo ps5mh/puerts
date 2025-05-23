@@ -108,15 +108,6 @@ let loader = jsEnv.GetLoader();
 // puer.loadFile = loadFile;
 
 // puer.fileExists = loader.Resolve.bind(loader);
-class TextDecoder {
-    decode = global.__puer_utf8_decode__;
-}
-
-class TextEncoder {
-    encode = global.__puer_utf8_encode__;
-}
-global.TextEncoder = TextEncoder;
-global.TextDecoder = TextDecoder;
 
 function loadFile(path) {
     let debugPath = [];
