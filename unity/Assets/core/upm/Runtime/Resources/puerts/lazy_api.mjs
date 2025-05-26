@@ -3,9 +3,8 @@
  * @author bingcongni
  * @see https://iwiki.woa.com/p/4008334693
  */
-
 (function () {
-    const logger = global.console;
+    const { puerts, CS, console: logger } = global;
     // declear c# implemented APIs defined in DynamicBinder.cs
     const bridge = CS.Puerts.LazyAPINative;
     const CSIMPL = {
@@ -172,7 +171,7 @@
     function addNestedType(jsClass, apiName, innerType) {
         const csType = puerts.$typeof(jsClass);
         const flags = 4 /* BindingFlags.Instance */ | 8 /* BindingFlags.Static */ | 16 /* BindingFlags.Public */;
-        innerType = innerType !== null && innerType !== void 0 ? innerType : csType === null || csType === void 0 ? void 0 : csType.GetNestedType(apiName.replace('$', '`'), flags);
+        innerType = innerType ?? csType?.GetNestedType(apiName.replace('$', '`'), flags);
         if (innerType) {
             const api = CS[innerType.FullName];
             Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
@@ -183,10 +182,9 @@
         }
     }
     function addPrivateInterfaceProperty(jsClass, apiName) {
-        var _a;
         const csType = puerts.$typeof(jsClass);
         const flagsNonPub = 4 /* BindingFlags.Instance */ | 32 /* BindingFlags.NonPublic */ | 2 /* BindingFlags.DeclaredOnly */;
-        const properties = (_a = csType === null || csType === void 0 ? void 0 : csType.GetProperties(flagsNonPub)) !== null && _a !== void 0 ? _a : [];
+        const properties = csType?.GetProperties(flagsNonPub) ?? [];
         for (let i = 0; i < properties.Length; i++) {
             const prop = properties.get_Item(i);
             if (prop.Name.endsWith("." + apiName)) {
@@ -386,9 +384,8 @@
         Object.setPrototypeOf(CS.System.Object, puerts.__static_lazy_proxy__);
     }
     function setupSystemObjectInnerClassLazyAccess() {
-        var _a;
         // temporary way to patch getNestedTypes in csTypeToClass, to implement delayed inner class
-        (_a = puerts.__originalPuertsGetNestedTypes) !== null && _a !== void 0 ? _a : (puerts.__originalPuertsGetNestedTypes = puerts.getNestedTypes);
+        puerts.__originalPuertsGetNestedTypes ?? (puerts.__originalPuertsGetNestedTypes = puerts.getNestedTypes);
         function getNestedTypesLazyInnerPatched(csTypeOrName) {
             if (config.IS_INNER_CLASS_LAZY_ENABLED) {
                 return null;
@@ -398,12 +395,10 @@
         puerts.getNestedTypes = getNestedTypesLazyInnerPatched;
     }
     function setupExtensionAPIAccessHook() {
-        var _a;
-        (_a = puerts.__originalPuerts$extension) !== null && _a !== void 0 ? _a : (puerts.__originalPuerts$extension = puerts.$extension);
+        puerts.__originalPuerts$extension ?? (puerts.__originalPuerts$extension = puerts.$extension);
         function $extensionPatched(cls, extension) {
-            var _a;
             if (IS_LAZY_API_ENABLED) {
-                const arr = (_a = config.extensions.get(cls)) !== null && _a !== void 0 ? _a : [];
+                const arr = config.extensions.get(cls) ?? [];
                 arr.push(extension);
                 config.extensions.set(cls, arr);
                 return;
@@ -413,16 +408,23 @@
         puerts.$extension = $extensionPatched;
     }
     function setupGenericMethodCache() {
-        var _a;
-        (_a = puerts.__originalPuerts$genericMethod) !== null && _a !== void 0 ? _a : (puerts.__originalPuerts$genericMethod = puerts.$genericMethod);
+        puerts.__originalPuerts$genericMethod ?? (puerts.__originalPuerts$genericMethod = puerts.$genericMethod);
         function $genericMethodCached(cls, methodName, ...args) {
-            const apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
-            if (Object.prototype.hasOwnProperty.call(cls, apiName)) {
-                return cls[apiName];
+            if (!config.IS_GENERIC_METHOD_CACHED)
+                return puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+            try {
+                const apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
+                if (Object.prototype.hasOwnProperty.call(cls, apiName)) {
+                    return cls[apiName];
+                }
+                const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+                Reflect.set(Object, apiName, api, cls);
+                return api;
             }
-            const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
-            Reflect.set(Object, apiName, api, cls);
-            return api;
+            catch (e) {
+                2 /* LL.W */ >= config.LL && log(2 /* LL.W */, `generic method cache failed! With exception: ${e}`);
+                return puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+            }
         }
         puerts.$genericMethod = $genericMethodCached;
     }
@@ -436,7 +438,8 @@
     const config = {
         IS_INNER_CLASS_LAZY_ENABLED: true, // optimize class import performance/memory usage, by delay import inner classes
         IS_CLEAR_LAZY_API_ENABLED: true, // optimize memory usage, by manually trigger LazyAPI.Clear()
-        IS_SIMPLIFIED_GENERIC_ENABLED: true, // optimize code style, while accessing generic methods
+        IS_SIMPLIFIED_GENERIC_ENABLED: false, // optimize code style, while accessing generic methods
+        IS_GENERIC_METHOD_CACHED: true,
         LAZY_API_PROFILE_TIMER: -1, // set to -1 to disable profiler
         SET_LAZY_API_NAME: false,
         TO_CLEAR_API_JSCLASSES: new Set(), // for switch IS_CLEAR_LAZY_API_ENABLED
@@ -448,6 +451,7 @@
         0 /* LL.I */ >= config.LL && log(0 /* LL.I */, `enableLazyAPI: ${enabled}`);
         CSIMPL.SetEnabled(enabled);
         IS_LAZY_API_ENABLED = enabled;
+        config.IS_INNER_CLASS_LAZY_ENABLED = enabled;
     }
     function Clear() {
         if (!config.IS_CLEAR_LAZY_API_ENABLED)
@@ -529,8 +533,7 @@
     LazyAPI.SetEnabled = SetEnabled;
     LazyAPI.AddAPI = addAPIHierarchy;
     puerts.LazyAPI = LazyAPI;
-    // make sure lazy api takes effect ASAP
-    LazyAPI.SetEnabled(true);
+    puerts.LazyAPI.SetEnabled(false);
     return LazyAPI;
 })();
 export {};

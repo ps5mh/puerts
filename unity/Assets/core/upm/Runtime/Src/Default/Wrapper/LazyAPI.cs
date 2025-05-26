@@ -24,16 +24,20 @@ namespace Puerts
 
         public static void RegisterLazyAPI(JsEnv jsEnv) 
         {
-            var typeId = jsEnv.TypeRegister.GetTypeId(jsEnv.isolate, typeof(LazyAPINative));
-            PuertsDLL.RegisterFunction(jsEnv.isolate, typeId, "RegisterAPI", true, RegisterAPI, jsEnv.Idx);
-            PuertsDLL.RegisterFunction(jsEnv.isolate, typeId, "ClearAllAPI", true, ClearAllAPI, jsEnv.Idx);
-            PuertsDLL.RegisterFunction(jsEnv.isolate, typeId, "SetEnabled", true, SetEnabled, jsEnv.Idx);
-
-            jsEnv.OnDispose += () =>
+            bool isFirst = false;
+            var typeId = jsEnv.TypeRegister.GetTypeId(jsEnv.isolate, typeof(LazyAPINative), out isFirst);
+            if (isFirst)
             {
-                enabledJsEnvs.Remove(jsEnv.Index);
-                callbacksE.Remove(jsEnv.Index);
-            };
+                PuertsDLL.RegisterFunction(jsEnv.isolate, typeId, "RegisterAPI", true, RegisterAPI, jsEnv.Idx);
+                PuertsDLL.RegisterFunction(jsEnv.isolate, typeId, "ClearAllAPI", true, ClearAllAPI, jsEnv.Idx);
+                PuertsDLL.RegisterFunction(jsEnv.isolate, typeId, "SetEnabled", true, SetEnabled, jsEnv.Idx);
+
+                jsEnv.OnDispose += () =>
+                {
+                    enabledJsEnvs.Remove(jsEnv.Index);
+                    callbacksE.Remove(jsEnv.Index);
+                };
+            }
         }
 
         [MonoPInvokeCallback(typeof(V8FunctionCallback))]
