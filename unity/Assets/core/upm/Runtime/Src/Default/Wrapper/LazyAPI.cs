@@ -142,8 +142,14 @@ namespace Puerts
                     var propInfo = members[0] as PropertyInfo;
                     var accessNonPublic = (flags & BindingFlags.NonPublic) != 0;
                     var overloads = new List<OverloadReflectionWrap>();
-                    if (propInfo.CanRead) {
+                    if (propInfo.CanRead)
+                    {
                         overloads.Add(new OverloadReflectionWrap(propInfo.GetGetMethod(accessNonPublic), jsEnv));
+                    }
+                    else
+                    {
+                        Func<object> func = () => { return null; };
+                        overloads.Add(new OverloadReflectionWrap(func.GetMethodInfo(), jsEnv));
                     }
                     if (propInfo.CanWrite) {
                         overloads.Add(new OverloadReflectionWrap(propInfo.GetSetMethod(accessNonPublic), jsEnv));

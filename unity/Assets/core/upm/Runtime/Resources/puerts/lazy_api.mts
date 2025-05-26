@@ -6,7 +6,7 @@
 
 import type CSharp from 'csharp';
 
-(function () {
+const REGISTER_LAZY_API = function () {
     // #region native implementations
     const enum MemberTypes {
         Invalid = 0,
@@ -484,18 +484,22 @@ import type CSharp from 'csharp';
         puerts.__originalPuerts$genericMethod ??= puerts.$genericMethod;
         function $genericMethodCached(cls: JSClass, methodName: string, ...args) {
             if (!config.IS_GENERIC_METHOD_CACHED) return puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+            let apiName = '';
             try {
-                const apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
+                apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
                 if (Object.prototype.hasOwnProperty.call(cls, apiName)) {
                     return cls[apiName];
                 }
-                const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args)
-                Reflect.set(Object, apiName, api, cls);
-                return api;
             } catch (e) {
                 LL.W >= config.LL && log(LL.W, `generic method cache failed! With exception: ${e}`);
-                return puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
             }
+
+            const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args)
+            if (apiName) {
+                Reflect.set(Object, apiName, api, cls);
+            }
+            return api;
+
         }
         puerts.$genericMethod = $genericMethodCached;
     }
@@ -526,6 +530,9 @@ import type CSharp from 'csharp';
         CSIMPL.SetEnabled(enabled);
         IS_LAZY_API_ENABLED = enabled;
         config.IS_INNER_CLASS_LAZY_ENABLED = enabled;
+        if (enabled) {
+            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", true, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
+        }
     }
 
     function Clear() {
@@ -597,12 +604,20 @@ import type CSharp from 'csharp';
         static Clear: () => string = Clear;
         static Dump: () => void = Dump;
         static SetEnabled: (enabled: boolean, debug?: boolean) => void = SetEnabled;
-        static AddAPI = addAPIHierarchy;
+        static AddAPI = (cls, name, isStatic, memberTypes = 8|4|16|128) => {
+            if (isStatic && name in cls) return;
+            if (!isStatic && name in cls.prototype) return;
+            addAPIHierarchy(cls, name, isStatic, memberTypes);
+        };
     }
     puerts.LazyAPI = LazyAPI;
-    puerts.LazyAPI.SetEnabled(false)
     return LazyAPI;
-})();
+};
+
+if (!puerts.LazyAPI) {
+    REGISTER_LAZY_API();
+    puerts.LazyAPI.SetEnabled(false);
+}
 
 declare module 'puerts' {
     // defined in lazy_api.ts
