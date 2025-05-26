@@ -3,7 +3,7 @@
  * @author bingcongni
  * @see https://iwiki.woa.com/p/4008334693
  */
-(function () {
+const REGISTER_LAZY_API = function () {
     const { puerts, CS, console: logger } = global;
     // declear c# implemented APIs defined in DynamicBinder.cs
     const bridge = CS.Puerts.LazyAPINative;
@@ -412,19 +412,21 @@
         function $genericMethodCached(cls, methodName, ...args) {
             if (!config.IS_GENERIC_METHOD_CACHED)
                 return puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+            let apiName = '';
             try {
-                const apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
+                apiName = `$${methodName}[${args.map(x => getClassName(x)).join(",")}]`;
                 if (Object.prototype.hasOwnProperty.call(cls, apiName)) {
                     return cls[apiName];
                 }
-                const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
-                Reflect.set(Object, apiName, api, cls);
-                return api;
             }
             catch (e) {
                 2 /* LL.W */ >= config.LL && log(2 /* LL.W */, `generic method cache failed! With exception: ${e}`);
-                return puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
             }
+            const api = puerts.__originalPuerts$genericMethod(cls, methodName, ...args);
+            if (apiName) {
+                Reflect.set(Object, apiName, api, cls);
+            }
+            return api;
         }
         puerts.$genericMethod = $genericMethodCached;
     }
@@ -452,6 +454,10 @@
         CSIMPL.SetEnabled(enabled);
         IS_LAZY_API_ENABLED = enabled;
         config.IS_INNER_CLASS_LAZY_ENABLED = enabled;
+        if (enabled) {
+            debugger;
+            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", false, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
+        }
     }
     function Clear() {
         if (!config.IS_CLEAR_LAZY_API_ENABLED)
@@ -531,9 +537,18 @@
     LazyAPI.Clear = Clear;
     LazyAPI.Dump = Dump;
     LazyAPI.SetEnabled = SetEnabled;
-    LazyAPI.AddAPI = addAPIHierarchy;
+    LazyAPI.AddAPI = (cls, name, isStatic, memberTypes = 8 | 4 | 16 | 128) => {
+        if (isStatic && name in cls)
+            return;
+        if (!isStatic && name in cls.prototype)
+            return;
+        addAPIHierarchy(cls, name, isStatic, memberTypes);
+    };
     puerts.LazyAPI = LazyAPI;
-    puerts.LazyAPI.SetEnabled(false);
     return LazyAPI;
-})();
+};
+if (!puerts.LazyAPI) {
+    REGISTER_LAZY_API();
+    puerts.LazyAPI.SetEnabled(false);
+}
 export {};
