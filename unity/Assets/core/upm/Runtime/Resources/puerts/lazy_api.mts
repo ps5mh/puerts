@@ -20,6 +20,7 @@ const REGISTER_LAZY_API = function () {
         NestedType = 128,
         All = 191,
         StaticConst = 256, // defined and used by lazy_api
+        SetterOnly = 512, // defined and used by lazy_api
     }
 
     const enum BindingFlags {
@@ -142,9 +143,9 @@ const REGISTER_LAZY_API = function () {
             const ok = addNestedType(jsClass, apiName, api);
             return ok;
         }
-        if (csMemberType === MemberTypes.Field || csMemberType === MemberTypes.Property) {
+        if (csMemberType & (MemberTypes.Field | MemberTypes.Property)) {
             Object.defineProperty(addAPITarget, apiName, {
-                get: api,
+                get: (csMemberType & MemberTypes.SetterOnly) ? undefined : api,
                 set: api,
                 configurable: true,
                 enumerable: false,
