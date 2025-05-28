@@ -21,8 +21,8 @@ namespace Puerts
         public static bool IsReflectionAPIEnabled(this JsEnv e) {
             return enabledJsEnvs.Contains(e.Index);
         }
-
-        public static void RegisterLazyAPI(JsEnv jsEnv) 
+        
+        public static void RegisterLazyAPI(JsEnv jsEnv)
         {
             bool isFirst = false;
             var typeId = jsEnv.TypeRegister.GetTypeId(jsEnv.isolate, typeof(LazyAPINative), out isFirst);
@@ -138,18 +138,12 @@ namespace Puerts
                     var wrap = new LazyFieldWrap(apiName, jsEnv, type);
                     PuertsDLL.ReturnCSharpFunctionCallback(jsEnv.isolate, info, JsEnvCallbackWrapExt, AddCallbackExt(wrap.Invoke, jsEnvIdx));
                 } else if (members[0] is PropertyInfo) {
-                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.Property);
                     var propInfo = members[0] as PropertyInfo;
+                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.Property | (!propInfo.CanRead ? 512 : 0));
                     var accessNonPublic = (flags & BindingFlags.NonPublic) != 0;
                     var overloads = new List<OverloadReflectionWrap>();
-                    if (propInfo.CanRead)
-                    {
+                    if (propInfo.CanRead) {
                         overloads.Add(new OverloadReflectionWrap(propInfo.GetGetMethod(accessNonPublic), jsEnv));
-                    }
-                    else
-                    {
-                        Func<object> func = () => { return null; };
-                        overloads.Add(new OverloadReflectionWrap(func.GetMethodInfo(), jsEnv));
                     }
                     if (propInfo.CanWrite) {
                         overloads.Add(new OverloadReflectionWrap(propInfo.GetSetMethod(accessNonPublic), jsEnv));

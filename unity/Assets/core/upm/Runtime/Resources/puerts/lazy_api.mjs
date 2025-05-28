@@ -71,9 +71,9 @@ const REGISTER_LAZY_API = function () {
             const ok = addNestedType(jsClass, apiName, api);
             return ok;
         }
-        if (csMemberType === 4 /* MemberTypes.Field */ || csMemberType === 16 /* MemberTypes.Property */) {
+        if (csMemberType & (4 /* MemberTypes.Field */ | 16 /* MemberTypes.Property */)) {
             Object.defineProperty(addAPITarget, apiName, {
-                get: api,
+                get: (csMemberType & 512 /* MemberTypes.SetterOnly */) ? undefined : api,
                 set: api,
                 configurable: true,
                 enumerable: false,
@@ -455,8 +455,7 @@ const REGISTER_LAZY_API = function () {
         IS_LAZY_API_ENABLED = enabled;
         config.IS_INNER_CLASS_LAZY_ENABLED = enabled;
         if (enabled) {
-            debugger;
-            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", false, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
+            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", true, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
         }
     }
     function Clear() {
