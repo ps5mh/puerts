@@ -173,11 +173,20 @@ const REGISTER_LAZY_API = function () {
         const flags = 4 /* BindingFlags.Instance */ | 8 /* BindingFlags.Static */ | 16 /* BindingFlags.Public */;
         innerType = innerType ?? csType?.GetNestedType(apiName.replace('$', '`'), flags);
         if (innerType) {
-            const api = CS[innerType.FullName];
+            if (innerType.IsGenericTypeDefinition && csType.IsGenericType) {
+                const genericArgs = csType.GetGenericArguments();
+                const genericArgsJS = [];
+                for (let i = 0; i < genericArgs.Length; i++) {
+                    genericArgsJS.push(genericArgs.get_Item(i));
+                }
+                const api = puer.$csTypeToClass(innerType.MakeGenericType(...genericArgsJS));
+                Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
+                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success1', jsClass, apiName, true);
+                return true;
+            }
+            const api = puer.$csTypeToClass(innerType);
             Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
-            // Reflect.set(Object, apiName, api, jsClass);
-            delete CS[innerType.FullName];
-            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success', jsClass, apiName, true);
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success2', jsClass, apiName, true);
             return true;
         }
     }
@@ -455,7 +464,7 @@ const REGISTER_LAZY_API = function () {
         IS_LAZY_API_ENABLED = enabled;
         config.IS_INNER_CLASS_LAZY_ENABLED = enabled;
         if (enabled) {
-            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", true, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
+            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", false, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
         }
     }
     function Clear() {

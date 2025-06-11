@@ -10,7 +10,11 @@ namespace Puerts.UnitTest
         [Test]
         public void LazyApiTestEnable()
         {
-            var jsEnv = UnitTestEnv.GetEnv();
+#if PUERTS_GENERAL
+            var jsEnv = new JsEnv(new TxtLoader());
+#else
+            var jsEnv = new JsEnv(new DefaultLoader());
+#endif
             Puerts.LazyAPI.RegisterLazyAPI(jsEnv);
             jsEnv.ExecuteModule("puerts/lazy_api.mjs");
             var ok = jsEnv.Eval<bool>(@"
@@ -33,7 +37,11 @@ console.log(screenProps);
         [Test]
         public void LazyApiTestPerformance()
         {
-            var jsEnv = UnitTestEnv.GetEnv();
+#if PUERTS_GENERAL
+            var jsEnv = new JsEnv(new TxtLoader());
+#else
+            var jsEnv = new JsEnv(new DefaultLoader());
+#endif
             Puerts.LazyAPI.RegisterLazyAPI(jsEnv);
             jsEnv.ExecuteModule("puerts/lazy_api.mjs");
             var ok = jsEnv.Eval<bool>(@"

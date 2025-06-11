@@ -244,16 +244,26 @@ const REGISTER_LAZY_API = function () {
         const flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public;
         innerType = innerType ?? csType?.GetNestedType(apiName.replace('$', '`'), flags);
         if (innerType) {
-            const api = CS[innerType.FullName] as object;
+            if (innerType.IsGenericTypeDefinition && csType.IsGenericType) {
+                const genericArgs = csType.GetGenericArguments();
+                const genericArgsJS: any[] = [];
+                for (let i = 0; i < genericArgs.Length; i++) {
+                    genericArgsJS.push(genericArgs.get_Item(i));
+                }
+                const api = puer.$csTypeToClass(innerType.MakeGenericType(...genericArgsJS));
+                Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
+                LL.D >= config.LL && log(LL.D, 'NestedType register api success, inner class of generic class', jsClass, apiName, true);
+                return true;
+            }
+
+            const api = puer.$csTypeToClass(innerType);
             Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
-            // Reflect.set(Object, apiName, api, jsClass);
-            delete CS[innerType.FullName];
             LL.D >= config.LL && log(LL.D, 'NestedType register api success', jsClass, apiName, true);
             return true;
         }
     }
 
-    function addPrivateInterfaceProperty(jsClass: JSClass, apiName: string){
+    function addPrivateInterfaceProperty(jsClass: JSClass, apiName: string) {
         const csType = puerts.$typeof(jsClass);
         const flagsNonPub = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
         const properties = csType?.GetProperties(flagsNonPub) ?? [];
@@ -364,7 +374,7 @@ const REGISTER_LAZY_API = function () {
                         return ok;
                     }
                 }
-                let curClass = jsClass; 
+                let curClass = jsClass;
                 let level = 0;
                 while (true) {
                     const ok = addAPI(curClass, apiName, isStatic, filterMemberTypes);
@@ -532,7 +542,7 @@ const REGISTER_LAZY_API = function () {
         IS_LAZY_API_ENABLED = enabled;
         config.IS_INNER_CLASS_LAZY_ENABLED = enabled;
         if (enabled) {
-            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", true, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
+            puerts.LazyAPI.AddAPI(CS.System.Type, "GetMember", false, 8 /* MemberTypes.Method */); // used by puer.getGenericMethod
         }
     }
 
@@ -605,7 +615,7 @@ const REGISTER_LAZY_API = function () {
         static Clear: () => string = Clear;
         static Dump: () => void = Dump;
         static SetEnabled: (enabled: boolean, debug?: boolean) => void = SetEnabled;
-        static AddAPI = (cls, name, isStatic, memberTypes = 8|4|16|128) => {
+        static AddAPI = (cls, name, isStatic, memberTypes = 8 | 4 | 16 | 128) => {
             if (isStatic && name in cls) return;
             if (!isStatic && name in cls.prototype) return;
             addAPIHierarchy(cls, name, isStatic, memberTypes);

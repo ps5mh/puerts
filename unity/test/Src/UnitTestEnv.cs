@@ -26,6 +26,11 @@ namespace Puerts.UnitTest
                 loader2 = new UnitTestLoader2();
 #if !UNITY_WEBGL || UNITY_EDITOR
                 env = new JsEnv(loader2);
+#if FULL_LAZYAPI_TEST
+                LazyAPI.RegisterLazyAPI(env);
+                env.ExecuteModule("puerts/lazy_api.mjs");
+                env.Eval("puerts.LazyAPI.SetEnabled(true, true)");
+#endif
                 CommonJS.InjectSupportForCJS(env);
 #else 
                 env = Puerts.WebGL.MainEnv.Get(loader2);
