@@ -6,7 +6,9 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 
-namespace Puerts 
+#if PUERTS_DISABLE_IL2CPP_OPTIMIZATION || (!PUERTS_IL2CPP_OPTIMIZATION && UNITY_IPHONE) || !ENABLE_IL2CPP
+
+namespace Puerts
 {
     public class LazyAPINative
     {
@@ -18,10 +20,11 @@ namespace Puerts
         private readonly static Dictionary<int, List<JSFunctionCallback>> callbacksE = new Dictionary<int, List<JSFunctionCallback>>();
         private readonly static Stopwatch sw = new Stopwatch();
 
-        public static bool IsReflectionAPIEnabled(this JsEnv e) {
+        public static bool IsReflectionAPIEnabled(this JsEnv e)
+        {
             return enabledJsEnvs.Contains(e.Index);
         }
-        
+
         public static void RegisterLazyAPI(JsEnv jsEnv)
         {
             bool isFirst = false;
@@ -43,7 +46,7 @@ namespace Puerts
         [MonoPInvokeCallback(typeof(V8FunctionCallback))]
         private static void SetEnabled(IntPtr isolate, IntPtr info, IntPtr self, int paramLen, long data)
         {
-            try 
+            try
             {
                 int jsEnvIdx = (int)data;
                 if (paramLen < 1)
@@ -56,9 +59,12 @@ namespace Puerts
                     throw new Exception("arg1 type should be boolean");
                 }
                 var e = PuertsDLL.GetBooleanFromValue(isolate, csTypeJSValue, false);
-                if (e) {
+                if (e)
+                {
                     enabledJsEnvs.Add(jsEnvIdx);
-                } else {
+                }
+                else
+                {
                     enabledJsEnvs.Remove(jsEnvIdx);
                 }
             }
@@ -66,7 +72,7 @@ namespace Puerts
             {
                 PuertsDLL.ThrowException(isolate, "SetEnabled c# exception:" + e.Message + ",stack:" + e.StackTrace);
             }
-		}
+        }
 
         [MonoPInvokeCallback(typeof(V8FunctionCallback))]
         private static void ClearAllAPI(IntPtr isolate, IntPtr info, IntPtr self, int paramLen, long data)
@@ -112,54 +118,34 @@ namespace Puerts
                 var type = jsEnv.GeneralGetterManager.GetSelf(jsEnvIdx, PuertsDLL.GetObjectFromValue(isolate, PuertsDLL.GetArgumentValue(isolate, info, 0), false)) as Type;
                 var apiName = PuertsDLL.GetStringFromValue(isolate, PuertsDLL.GetArgumentValue(isolate, info, 1), false);
                 var memberTypesRef = PuertsDLL.GetArgumentValue(isolate, info, 2);
-                var memberTypes = (MemberTypes)PuertsDLL.GetNumberFromValue(isolate, memberTypesRef, true);
+                var memberTypes = (int)PuertsDLL.GetNumberFromValue(isolate, memberTypesRef, true);
                 var flags = (BindingFlags)PuertsDLL.GetNumberFromValue(isolate, PuertsDLL.GetArgumentValue(isolate, info, 3), false);
-                // var typeId = jsEnv.TypeRegister.GetTypeId(isolate, targetType);
-                var members = type.GetMember(apiName, memberTypes, flags);
-                PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)0);
-                if (members.Length <= 0)
+                var obj = LazyAPIUtility.RegisterAPI_Impl(type, apiName, ref memberTypes, flags);
+                PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, memberTypes);
+                if ((memberTypes & (int)MemberTypes.Field) != 0)
                 {
-                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)0);
-                    PuertsDLL.ReturnNull(jsEnv.isolate, info);
-                    return;
-                }
-                if (members[0] is FieldInfo)
-                {
-                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.Field);
-                    var fieldInfo = members[0] as FieldInfo;
-                    if (fieldInfo.IsStatic && (fieldInfo.IsInitOnly || fieldInfo.IsLiteral))
+                    if ((memberTypes & (int)LazyAPIUtility.StaticConst) != 0)
                     {
-                        PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.Field | 256 /*StaticConst = 256 defined in lazy_api.ts*/);
-                        var val = fieldInfo.GetValue(type);
-                        var translateFunc = jsEnv.GeneralSetterManager.GetTranslateFunc(fieldInfo.FieldType);
-                        translateFunc(jsEnv.Idx, isolate, NativeValueApi.SetValueToResult, info, val);
-                        return;
+                        Puerts.ResultHelper.Set(jsEnvIdx, isolate, info, obj);
                     }
-                    var wrap = new LazyFieldWrap(apiName, jsEnv, type);
-                    PuertsDLL.ReturnCSharpFunctionCallback(jsEnv.isolate, info, JsEnvCallbackWrapExt, AddCallbackExt(wrap.Invoke, jsEnvIdx));
-                } else if (members[0] is PropertyInfo) {
-                    var propInfo = members[0] as PropertyInfo;
-                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.Property | (!propInfo.CanRead ? 512 : 0));
-                    var accessNonPublic = (flags & BindingFlags.NonPublic) != 0;
-                    var overloads = new List<OverloadReflectionWrap>();
-                    if (propInfo.CanRead) {
-                        overloads.Add(new OverloadReflectionWrap(propInfo.GetGetMethod(accessNonPublic), jsEnv));
+                    else
+                    {
+                        var filedInfo = obj as FieldInfo;
+                        var callbackID = AddCallbackExt(new LazyFieldWrap(filedInfo.Name, jsEnv, filedInfo.DeclaringType).Invoke, jsEnvIdx);
+                        PuertsDLL.ReturnCSharpFunctionCallback(isolate, info, JsEnvCallbackWrapExt, callbackID);
                     }
-                    if (propInfo.CanWrite) {
-                        overloads.Add(new OverloadReflectionWrap(propInfo.GetSetMethod(accessNonPublic), jsEnv));
-                    }
-                    var wrap = new MethodReflectionWrap(apiName, overloads);
-                    PuertsDLL.ReturnCSharpFunctionCallback(jsEnv.isolate, info, JsEnvCallbackWrapExt, AddCallbackExt(wrap.Invoke, jsEnvIdx));
-                } else if (members[0] is MethodInfo) {
-                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.Method);
-                    members = type.GetMember(apiName, MemberTypes.Method, flags ^ BindingFlags.DeclaredOnly); // ^ BindingFlags.DeclaredOnly to include override methods
-                    var overloads = members.Select(x => x as MethodInfo).Select(m => new OverloadReflectionWrap(m, jsEnv, false)).ToList();
-                    var wrap = new MethodReflectionWrap(apiName, overloads);
-                    PuertsDLL.ReturnCSharpFunctionCallback(jsEnv.isolate, info, JsEnvCallbackWrapExt, AddCallbackExt(wrap.Invoke, jsEnvIdx));
-                } else if (members[0] is Type) {
-                    PuertsDLL.SetNumberToOutValue(jsEnv.isolate, memberTypesRef, (int)MemberTypes.NestedType);
-                    Puerts.ResultHelper.Set(jsEnvIdx, isolate, info, members[0] as Type);
                 }
+                else if ((memberTypes & (int)MemberTypes.Property) != 0 || (memberTypes & (int)MemberTypes.Method) != 0)
+                {
+                    var methodInfos = obj as MethodInfo[];
+                    var callbackID = AddCallbackExt(new MethodReflectionWrap(methodInfos[0].Name, methodInfos.Select(m => new OverloadReflectionWrap(m, jsEnv, false)).ToList()).Invoke, jsEnvIdx);
+                    PuertsDLL.ReturnCSharpFunctionCallback(isolate, info, JsEnvCallbackWrapExt, callbackID);
+                }
+                else
+                {
+                    Puerts.ResultHelper.Set(jsEnvIdx, isolate, info, obj);
+                }
+
             }
             catch (Exception e)
             {
@@ -182,6 +168,7 @@ namespace Puerts
             var data = Utils.TwoIntToLong(envIdx, callbackIdx);
             return data;
         }
+        
         [MonoPInvokeCallback(typeof(V8FunctionCallback))]
         private static void JsEnvCallbackWrapExt(IntPtr isolate, IntPtr info, IntPtr self, int paramLen, long data)
         {
@@ -195,6 +182,108 @@ namespace Puerts
             {
                 PuertsDLL.ThrowException(isolate, "JsEnvCallbackWrapExt c# exception:" + e.Message + ",stack:" + e.StackTrace);
             }
+        }
+    }
+}
+
+#else
+
+namespace Puerts
+{
+    public static class LazyAPI
+    {
+        [DllImport("__Internal", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void SetLazyAPI_RegisterAPI_Impl(IntPtr log);
+
+        private static void SetLazyAPI_RegisterAPI(Puerts.LazyAPIUtility.RegisterAPI_Delegate d)
+        {
+#if PUERTS_GENERAL || (UNITY_WSA && !UNITY_EDITOR) || UNITY_STANDALONE_WIN
+            GCHandle.Alloc(d);
+#endif
+            IntPtr fn1 = d == null ? IntPtr.Zero : Marshal.GetFunctionPointerForDelegate(d);
+            try 
+            {
+                //SetLogCallback(fn1);
+                SetLazyAPI_RegisterAPI_Impl(fn1);
+            }
+            catch(DllNotFoundException)
+            {
+#if PUERTS_GENERAL
+                System.Console.WriteLine("[Puer001] PuerTS's Native Plugin(s) is missing. You can solve this problem following the FAQ.");
+#else
+                UnityEngine.Debug.LogError("[Puer001] PuerTS's Native Plugin(s) is missing. You can solve this problem following the FAQ.");
+#endif
+                throw;
+            }
+        }
+
+        public static void RegisterLazyAPI(JsEnv e)
+        {
+            SetLazyAPI_RegisterAPI(Puerts.LazyAPIUtility.RegisterAPI_Impl);
+        }
+    }
+}
+
+#endif
+
+
+namespace Puerts
+{
+    public static class LazyAPIUtility
+    {
+        public const MemberTypes StaticConst = (MemberTypes)256; /* MemberTypes.StaticConst defined in lazy_api.ts */
+        public const MemberTypes SetterOnly = (MemberTypes)512; /* MemberTypes.SetterOnly defined in lazy_api.ts */
+        public delegate object RegisterAPI_Delegate(Type type, string apiName, ref int memberTypes, BindingFlags flags);
+
+        [MonoPInvokeCallback(typeof(RegisterAPI_Delegate))]
+        public static object RegisterAPI_Impl(Type type, string apiName, ref int memberTypes, BindingFlags flags)
+        {
+            var members = type.GetMember(apiName, (MemberTypes)memberTypes, flags);
+            memberTypes = 0;
+            if (members.Length <= 0)
+            {
+                return null;
+            }
+            if (members[0] is FieldInfo)
+            {
+                memberTypes = (int)MemberTypes.Field;
+                var fieldInfo = members[0] as FieldInfo;
+                if (fieldInfo.IsStatic && (fieldInfo.IsInitOnly || fieldInfo.IsLiteral))
+                {
+                    memberTypes = (int)(MemberTypes.Field | StaticConst);
+                    var val = fieldInfo.GetValue(type);
+                    return val;
+                }
+                return fieldInfo;
+            }
+            else if (members[0] is PropertyInfo)
+            {
+                var propInfo = members[0] as PropertyInfo;
+                memberTypes = (int)MemberTypes.Property | (!propInfo.CanRead ? (int)SetterOnly : 0);
+                var accessNonPublic = (flags & BindingFlags.NonPublic) != 0;
+                var overloads = new List<MethodInfo>();
+                if (propInfo.CanRead)
+                {
+                    overloads.Add(propInfo.GetGetMethod(accessNonPublic));
+                }
+                if (propInfo.CanWrite)
+                {
+                    overloads.Add(propInfo.GetSetMethod(accessNonPublic));
+                }
+                return overloads.ToArray();
+            }
+            else if (members[0] is MethodInfo)
+            {
+                memberTypes = (int)MemberTypes.Method;
+                members = type.GetMember(apiName, MemberTypes.Method, flags ^ BindingFlags.DeclaredOnly); // ^ BindingFlags.DeclaredOnly to include override methods
+                return members.Select(x => x as MethodInfo).ToArray();
+            }
+            else if (members[0] is Type)
+            {
+                memberTypes = (int)MemberTypes.NestedType;
+                return members[0];
+            }
+            return null;
         }
     }
 }

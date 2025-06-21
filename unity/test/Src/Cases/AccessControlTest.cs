@@ -111,6 +111,7 @@ namespace Puerts.UnitTest
             Assert.AreNotEqual(ret, "undefined");
         }
 
+#if !FULL_LAZYAPI_TEST
         [Test]
         public void DontBindingInFastBindingEnv()
         {
@@ -137,7 +138,7 @@ namespace Puerts.UnitTest
             ");
             Assert.AreEqual(ret, "undefined");
         }
-
+#endif
         
         [MonoPInvokeCallback(typeof(V8FunctionCallback))]
         internal static void EmptyCallbackWrap(IntPtr isolate, IntPtr info, IntPtr self, int paramLen, long data)
