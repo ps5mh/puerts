@@ -28,7 +28,7 @@ namespace Puerts.UnitTest
 #if FULL_LAZYAPI_TEST
                 LazyAPI.RegisterLazyAPI(env);
                 env.ExecuteModule("puerts/lazy_api.mjs");
-                env.Eval("puerts.LazyAPI.SetEnabled(true, true)");
+                env.Eval("puerts.LazyAPI.SetEnabled(true, true); puerts.LazyAPI.config.IS_GENERIC_METHOD_CACHED = false;");
 #endif
                 CommonJS.InjectSupportForCJS(env);
 #else 

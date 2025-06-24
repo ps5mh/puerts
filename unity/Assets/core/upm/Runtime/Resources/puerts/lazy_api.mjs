@@ -3,8 +3,8 @@
  * @author bingcongni
  * @see https://iwiki.woa.com/p/4008334693
  */
+const { puerts, CS, console: logger } = global;
 const REGISTER_LAZY_API = function () {
-    const { puerts, CS, console: logger } = global;
     // declear c# implemented APIs defined in DynamicBinder.cs
     const bridge = CS.Puerts.LazyAPINative;
     const CSIMPL = {
@@ -179,14 +179,14 @@ const REGISTER_LAZY_API = function () {
                 for (let i = 0; i < genericArgs.Length; i++) {
                     genericArgsJS.push(genericArgs.get_Item(i));
                 }
-                const api = puer.$csTypeToClass(innerType.MakeGenericType(...genericArgsJS));
+                const api = puerts.$csTypeToClass(innerType.MakeGenericType(...genericArgsJS));
                 Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
-                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success1', jsClass, apiName, true);
+                1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success, inner class of generic class', jsClass, apiName, true);
                 return true;
             }
-            const api = puer.$csTypeToClass(innerType);
+            const api = puerts.$csTypeToClass(innerType);
             Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
-            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success2', jsClass, apiName, true);
+            1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'NestedType register api success', jsClass, apiName, true);
             return true;
         }
     }

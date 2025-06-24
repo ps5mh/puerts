@@ -193,33 +193,10 @@ namespace Puerts
     public static class LazyAPI
     {
         [DllImport("__Internal", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void SetLazyAPI_RegisterAPI_Impl(IntPtr log);
-
-        private static void SetLazyAPI_RegisterAPI(Puerts.LazyAPIUtility.RegisterAPI_Delegate d)
-        {
-#if PUERTS_GENERAL || (UNITY_WSA && !UNITY_EDITOR) || UNITY_STANDALONE_WIN
-            GCHandle.Alloc(d);
-#endif
-            IntPtr fn1 = d == null ? IntPtr.Zero : Marshal.GetFunctionPointerForDelegate(d);
-            try 
-            {
-                //SetLogCallback(fn1);
-                SetLazyAPI_RegisterAPI_Impl(fn1);
-            }
-            catch(DllNotFoundException)
-            {
-#if PUERTS_GENERAL
-                System.Console.WriteLine("[Puer001] PuerTS's Native Plugin(s) is missing. You can solve this problem following the FAQ.");
-#else
-                UnityEngine.Debug.LogError("[Puer001] PuerTS's Native Plugin(s) is missing. You can solve this problem following the FAQ.");
-#endif
-                throw;
-            }
-        }
-
+        public static extern void RegisterLazyApiImpl(IntPtr apis, IntPtr envRef);
         public static void RegisterLazyAPI(JsEnv e)
         {
-            SetLazyAPI_RegisterAPI(Puerts.LazyAPIUtility.RegisterAPI_Impl);
+            RegisterLazyApiImpl(e.apis, e.nativePesapiEnv);
         }
     }
 }
