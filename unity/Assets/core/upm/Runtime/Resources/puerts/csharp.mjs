@@ -176,7 +176,7 @@ function makeGeneric(genericTypeInfo, ...genericArgs) {
 
         let typName = genericTypeInfo.get('$name')
         let typ = puer.loadType(typName, ...genericArgs)
-
+        
         let currentCls = typ, parentPrototype = Object.getPrototypeOf(currentCls.prototype);
 
         // 此处parentPrototype如果是一个泛型，会丢失父父的继承信息，必须循环找下去
@@ -195,7 +195,7 @@ function makeGeneric(genericTypeInfo, ...genericArgs) {
                 return genIterator(this);
             }
         }
-        
+
         let nestedTypes = puer.getNestedTypes(csType);
         if (nestedTypes) {
             for(var i = 0; i < nestedTypes.Length; i++) {
