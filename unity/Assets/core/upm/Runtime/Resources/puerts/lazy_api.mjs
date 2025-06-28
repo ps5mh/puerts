@@ -557,6 +557,6 @@ const REGISTER_LAZY_API = function () {
 };
 if (!puerts.LazyAPI) {
     REGISTER_LAZY_API();
-    puerts.LazyAPI.SetEnabled(false);
+    puerts.LazyAPI.SetEnabled(true);
 }
 export {};

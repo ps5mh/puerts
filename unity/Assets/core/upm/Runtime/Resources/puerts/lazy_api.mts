@@ -6,6 +6,8 @@
 
 import type CSharp from 'csharp';
 
+const { puerts, CS, console: logger } = global;
+
 const REGISTER_LAZY_API = function () {
     // #region native implementations
     const enum MemberTypes {
@@ -46,7 +48,6 @@ const REGISTER_LAZY_API = function () {
         IgnoreReturn = 16777216,
     }
 
-    const { puerts, CS, console: logger } = global;
     // declear c# implemented APIs defined in DynamicBinder.cs
     const bridge = CS.Puerts.LazyAPINative;
     const CSIMPL = {
@@ -250,13 +251,13 @@ const REGISTER_LAZY_API = function () {
                 for (let i = 0; i < genericArgs.Length; i++) {
                     genericArgsJS.push(genericArgs.get_Item(i));
                 }
-                const api = puer.$csTypeToClass(innerType.MakeGenericType(...genericArgsJS));
+                const api = puerts.$csTypeToClass(innerType.MakeGenericType(...genericArgsJS));
                 Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
                 LL.D >= config.LL && log(LL.D, 'NestedType register api success, inner class of generic class', jsClass, apiName, true);
                 return true;
             }
 
-            const api = puer.$csTypeToClass(innerType);
+            const api = puerts.$csTypeToClass(innerType);
             Object.defineProperty(jsClass, apiName, { configurable: false, value: api, writable: false });
             LL.D >= config.LL && log(LL.D, 'NestedType register api success', jsClass, apiName, true);
             return true;
@@ -627,7 +628,7 @@ const REGISTER_LAZY_API = function () {
 
 if (!puerts.LazyAPI) {
     REGISTER_LAZY_API();
-    puerts.LazyAPI.SetEnabled(false);
+    puerts.LazyAPI.SetEnabled(true);
 }
 
 declare module 'puerts' {
