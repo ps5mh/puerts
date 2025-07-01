@@ -367,7 +367,7 @@ const REGISTER_LAZY_API = function () {
                 return ok;
             }
             if (IS_LAZY_API_ENABLED) {
-                if (isStatic && Object.prototype.hasOwnProperty.call(jsClass, '__p_isEnum')) {
+                if (isStatic && puerts.$typeof(jsClass)?.IsEnum) {
                     const ok = addEnumAPI(jsClass, apiName);
                     if (ok) {
                         config.TO_CLEAR_API_JSCLASSES.add(jsClass);
@@ -407,7 +407,7 @@ const REGISTER_LAZY_API = function () {
             LL.W >= config.LL && log(LL.W, 'register api failed!', jsClass, apiName, isStatic);
             if (config.LAZY_API_PROFILE_TIMER !== -1) config.LAZY_API_PROFILE_TIMER += Date.now() - begin;
         } catch (e) {
-            LL.E >= config.LL && log(LL.E, `register api failed! With exception: ${e}`, jsClass, apiName.toString(), isStatic);
+            LL.E >= config.LL && log(LL.E, `register api failed! With exception: ${e} ${e.stack}`, jsClass, apiName.toString(), isStatic);
         }
         return false;
     }
@@ -453,7 +453,7 @@ const REGISTER_LAZY_API = function () {
                 Reflect.has(t, p) ||
                 PUERTS_JS_CLASS_INNER_FIELDS.has(p) ||
                 // in csharp.mjs:csTypeToClass, enum values will be set, skip api lookup
-                Object.prototype.hasOwnProperty.call(r, '__p_isEnum')
+                (typeof(p) === 'string' && !isNaN(+p))
             ) {
                 return Reflect.set(t, p, v, r);
             }
