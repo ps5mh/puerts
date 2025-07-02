@@ -207,8 +207,13 @@
         let isESM = true;
         if (loader.IsESM) isESM = specifier.startsWith('puerts/') || loader.IsESM(specifier)
         if (!isESM && puer.require) return `export default puer.require('${specifier}')['default']`
-        const content = loader.ReadFile(specifier, debugpathRef);
-        if (content === undefined) {
+
+        if (loader.ReadFileBytes) {
+            content = loader.ReadFileBytes(specifier, debugpathRef);
+        } else {
+            content = loader.ReadFile(specifier, debugpathRef);
+        }
+        if (!content || content.length == 0) {
             throw new Error(`[Puer003]import ${originSp} failed: module not found`);
         }
         return content

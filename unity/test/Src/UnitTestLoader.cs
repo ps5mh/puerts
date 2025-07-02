@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
 using Puerts;
+using System.Text;
 
 namespace Puerts.UnitTest 
 {
@@ -65,7 +66,16 @@ namespace Puerts.UnitTest
         [UnityEngine.Scripting.Preserve]
         public string ReadFile(string specifier, out string debugpath)
         {
-            throw new System.Exception("should use ReadFileBytes");
+            var rtn = ReadFileBytes(specifier, out debugpath);
+            if (rtn is string)
+            {
+                return rtn as string;
+            }
+            else if (rtn is Puerts.ArrayBuffer)
+            {
+                return Encoding.UTF8.GetString((rtn as Puerts.ArrayBuffer).Bytes);
+            }
+            return null;
         }
 
         [UnityEngine.Scripting.Preserve]
