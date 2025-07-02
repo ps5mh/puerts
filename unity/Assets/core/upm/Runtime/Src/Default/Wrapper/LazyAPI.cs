@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using UnityEngine.Scripting;
 
 #if PUERTS_DISABLE_IL2CPP_OPTIMIZATION || (!PUERTS_IL2CPP_OPTIMIZATION && UNITY_IPHONE) || !ENABLE_IL2CPP
 
@@ -211,6 +212,23 @@ namespace Puerts
         public const MemberTypes StaticConst = (MemberTypes)256; /* MemberTypes.StaticConst defined in lazy_api.ts */
         public const MemberTypes SetterOnly = (MemberTypes)512; /* MemberTypes.SetterOnly defined in lazy_api.ts */
         public delegate object RegisterAPI_Delegate(Type type, string apiName, ref int memberTypes, BindingFlags flags);
+
+        [Preserve]
+        private static void __Preserve__()
+        {
+            Type t = typeof(Type);
+            t.GetProperties(BindingFlags.Default);
+            var _1 = t.IsGenericTypeDefinition;
+            var _2 = t.IsGenericType;
+            var _3 = t.GetGenericArguments();
+            var _4 = t.GetNestedType("", BindingFlags.Default);
+            var _5 = t.GetProperties(BindingFlags.Default);
+            var _6 = t.IsEnum;
+            var _7 = t.Name;
+            var _8 = System.Enum.GetName(t, 0);
+            var _9 = _5[0].Name;
+
+        }
 
         [MonoPInvokeCallback(typeof(RegisterAPI_Delegate))]
         public static object RegisterAPI_Impl(Type type, string apiName, ref int memberTypes, BindingFlags flags)
