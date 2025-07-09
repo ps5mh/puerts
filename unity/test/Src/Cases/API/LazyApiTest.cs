@@ -52,7 +52,7 @@ puerts.LazyAPI.SetEnabled(false);
 console.log(CS.UnityEngine.Screen.dpi);
 const screenProps = Object.getOwnPropertyNames(CS.UnityEngine.Screen);
 console.log(screenProps);
-
+puerts.LazyAPI.SetEnabled(true, true);
 !appProps.includes('dataPath') && screenProps.includes('width');
         ");
             Assert.True(ok);

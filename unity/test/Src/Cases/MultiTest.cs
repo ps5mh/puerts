@@ -144,7 +144,14 @@ namespace Puerts.UnitTest
             var jsEnv1 = new JsEnv(new UnitTestLoader());
             var jsEnv2 = new JsEnv(new UnitTestLoader());
 #endif
-
+#if FULL_LAZYAPI_TEST
+            LazyAPI.RegisterLazyAPI(jsEnv1);
+            LazyAPI.RegisterLazyAPI(jsEnv2);
+            jsEnv1.ExecuteModule("puerts/lazy_api.mjs");
+            jsEnv2.ExecuteModule("puerts/lazy_api.mjs");
+            jsEnv1.Eval(@"puerts.LazyAPI.SetEnabled(true, true);");
+            jsEnv2.Eval(@"puerts.LazyAPI.SetEnabled(true, true);");
+#endif
             jsEnv1.Eval(@"
                 (function() {
                     const A = CS.Puerts.UnitTest.MultiEnvTestA;

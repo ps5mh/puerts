@@ -128,9 +128,10 @@ static Il2CppClass* s_ParamArrayAttribute;
 static Il2CppClass* s_ExtensionAttribute;
 
 static bool RegisterType(Il2CppClass* klass, bool useLazyAPI);
+static bool G_USE_LAZY_API = false;
 static bool ClassNotFoundCallback(const void* typeId)
 {
-    return RegisterType((Il2CppClass*)typeId, false);
+    return RegisterType((Il2CppClass*)typeId, G_USE_LAZY_API);
 }
 
 static void SetExtensionMethodGet(Il2CppReflectionMethod* method)
@@ -2442,7 +2443,7 @@ static void createFunctionWrapper(struct pesapi_ffi* apis, pesapi_callback_info 
             {
                 csharpMethodInfo = new CSharpMethodInfo { reflectionMethod->method->name, isStatic, false, false, needBoxing};
             }
-            csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(reflectionMethod->method, IsExtensionMethod(reflectionMethod->method)));
+            csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(reflectionMethod->method, false /* lazy_api.mjs will deal with it */));
         }
     }
     if (csharpMethodInfo)
@@ -2607,7 +2608,7 @@ static bool RegisterType(Il2CppClass* klass, bool useLazyAPI)
         }
         bool isExtensionMethod = method->klass != klass && IsExtensionMethod(method);
         bool isStatic = !Method::IsInstance(method) && !isExtensionMethod; 
-        if (useLazyAPI && (isStatic || !classInfo->IsValueType)) {
+        if (useLazyAPI && (isStatic || !classInfo->IsValueType) && !isExtensionMethod) {
             return false;
         }
         for (int i = 0; i < classInfo->Methods.size(); ++i)
@@ -2882,10 +2883,7 @@ enum MemberTypes {
 void LazyAPINative_SetEnabled(struct pesapi_ffi* apis, pesapi_callback_info info) {
     auto env = ${invokePapi('get_env')}(info);
     auto p0 = ${invokePapi('get_arg')}(info, 0);
-    //auto enabled = ${invokePapi('get_value_bool')}(env, p0);
-    
-    auto G = ${invokePapi('global')}(env);
-    ${invokePapi('set_property')}(env, G, "__is_lazyapi_enabled__", p0);
+    G_USE_LAZY_API = ${invokePapi('get_value_bool')}(env, p0);
 }
 
 void LazyAPINative_RegisterAPI(struct pesapi_ffi* apis, pesapi_callback_info info)
@@ -2977,7 +2975,7 @@ void LazyAPINative_RegisterAPI(struct pesapi_ffi* apis, pesapi_callback_info inf
                 {
                     csharpMethodInfo = new CSharpMethodInfo{ reflectionMethod->method->name, isStatic, false, false, needBoxing };
                 }
-                csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(reflectionMethod->method, false));
+                csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(MakeGenericMethodByConstraintedArguments(reflectionMethod->method), false));
             }
         }
         if (csharpMethodInfo)
@@ -2998,18 +2996,9 @@ void LazyAPINative_RegisterAPI(struct pesapi_ffi* apis, pesapi_callback_info inf
 extern "C" {
 #endif
 
-static std::function<bool(const void*)> ClassNotFoundCallbackFunc = [] (const void* typeId) { return puerts::RegisterType((Il2CppClass*)typeId, false); };
-static bool ClassNotFoundCallbackWrap(const void* typeId){ return ClassNotFoundCallbackFunc(typeId); }
 void RegisterLazyApiImpl(struct pesapi_ffi* apis, pesapi_env_ref envRef) {
     puerts::AutoValueScope ValueScope(apis, envRef);
     auto env = ${invokePapi('get_env_from_ref')}(envRef);
-    ClassNotFoundCallbackFunc = [=](const void* typeId) {
-        puerts::AutoValueScope ValueScope(apis, envRef);
-        auto env = ${invokePapi('get_env_from_ref')}(envRef);
-        bool useLazyAPI = ${invokePapi('get_value_bool')}(env, ${invokePapi('get_property')}(env, ${invokePapi('global')}(env), "__is_lazyapi_enabled__"));
-        return puerts::RegisterType((Il2CppClass*)typeId, useLazyAPI);
-    };
-	pesapi_on_class_not_found(ClassNotFoundCallbackWrap);
 
     auto lazyAPINative_RegisterAPI = ${invokePapi('create_function')}(env, puerts::LazyAPINative_RegisterAPI, nullptr, nullptr);
     auto lazyAPINative_SetEnabled = ${invokePapi('create_function')}(env, puerts::LazyAPINative_SetEnabled, nullptr, nullptr);

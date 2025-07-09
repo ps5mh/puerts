@@ -27,8 +27,12 @@ namespace Puerts.UnitTest
                 env = new JsEnv(loader2);
 #if FULL_LAZYAPI_TEST
                 LazyAPI.RegisterLazyAPI(env);
+                // workaround for loader.loadfile not register, if new JsEnv with DefaultLoader.
+                env.Eval(@"new CS.Puerts.DefaultLoader(); new CS.Puerts.UnitTest.UnitTestLoader();");
                 env.ExecuteModule("puerts/lazy_api.mjs");
                 env.Eval(@"
+                    // extensions will not lazy for now
+                    // puerts.$extension(CS.Puerts.UnitTest.ExtensionTestHelper, CS.Puerts.UnitTest.HelperExtension)
                     puerts.LazyAPI.SetEnabled(true, true);
                     puerts.LazyAPI.config.IS_GENERIC_METHOD_CACHED = false;
                     
