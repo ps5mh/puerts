@@ -2585,6 +2585,7 @@ static const MethodInfo* MakeGenericMethodByConstraintedArguments(const MethodIn
 static bool RegisterType(Il2CppClass* klass, bool useLazyAPI)
 {
     Class::Init(klass);
+    Class::SetupMethods(klass);
 
     if (pesapi_get_class_data(klass, false))
     {
