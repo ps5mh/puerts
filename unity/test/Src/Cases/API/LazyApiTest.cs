@@ -56,9 +56,13 @@ console.log(screenProps);
             jsEnv.ExecuteModule("puerts/lazy_api.mjs");
             jsEnv.Eval<bool>(@"puerts.LazyAPI.SetEnabled(true, true);");
             var i = jsEnv.Eval<int>(@"
-                CS.Puerts.UnitTest.LazyApiTest.Instance.i;
+                var i = CS.Puerts.UnitTest.LazyApiTest.Instance.i;
+                var List$Int32 = puerts.$generic(CS.System.Collections.Generic.List$1, CS.System.Int32)
+                var a = new List$Int32();
+                a.Add(3);
+                i + a.get_Item(0);
             ");
-            Assert.AreEqual(i, 3);
+            Assert.AreEqual(i, 6);
             jsEnv.Tick();
         }
 

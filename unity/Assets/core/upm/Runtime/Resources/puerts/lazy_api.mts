@@ -265,7 +265,8 @@ const REGISTER_LAZY_API = function () {
 
     function addPrivateInterfaceProperty(csType: CSharp.System.Type, jsClass: JSClass, apiName: string) {
         const flagsNonPub = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
-        const properties = csType.GetProperties(flagsNonPub) ?? [];
+        const properties = csType.GetProperties(flagsNonPub);
+
         for (let i = 0; i < properties.Length; i++) {
             const prop = properties.get_Item(i);
             if (prop.Name.endsWith("." + apiName)) {
@@ -376,9 +377,10 @@ const REGISTER_LAZY_API = function () {
                     }
                 }
                 let curClass = jsClass;
+                let curType = csType;
                 let level = 0;
                 while (true) {
-                    const ok = addAPI(csType, curClass, apiName, isStatic, filterMemberTypes);
+                    const ok = addAPI(curType, curClass, apiName, isStatic, filterMemberTypes);
                     if (ok === false) break;
                     else if (ok) {
                         if (level > 1) {
@@ -390,7 +392,7 @@ const REGISTER_LAZY_API = function () {
                         return ok;
                     } else if (ok === undefined) {
                         curClass = Object.getPrototypeOf(curClass);
-                        csType = csType.BaseType;
+                        curType = curType.BaseType;
                         LL.D >= config.LL && log(LL.D, `try parent: ${curClass.name} ${csType.Name}`, jsClass, apiName, isStatic);
                         level = level + 1;
                     }
@@ -454,7 +456,7 @@ const REGISTER_LAZY_API = function () {
             const cls = r.constructor;
             ensureStaticInherit(cls);
             if (cls.prototype === r) {
-                return true;
+                return Reflect.set(t, p, v, r);
             }
             return addAPIHierarchy(r.GetType(), cls, p, false, MemberTypes.Field | MemberTypes.Property)
                 ? ((receiver[p] = v), true)
