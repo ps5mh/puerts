@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System;
 using Puerts;
+using UnityEngine;
 
 namespace Puerts.UnitTest
 {
@@ -10,9 +11,19 @@ namespace Puerts.UnitTest
         public static T Instance { get; } = new T();
     }
 
+    public static class UObjectExtension
+    {
+        public static int ExtTest(this UnityEngine.Object obj)
+        {
+            UnityEngine.Debug.Log($"ExtTest called with {obj.name}");
+            return 3;
+        }
+    }
+
     public class LazyApiTestStaticInherit
     {
-        public static LazyApiTest Instance {
+        public static LazyApiTest Instance
+        {
             get
             {
                 return LazyApiTest.Instance;
@@ -63,6 +74,26 @@ console.log(screenProps);
                 i + a.get_Item(0);
             ");
             Assert.AreEqual(i, 6);
+            jsEnv.Tick();
+        }
+
+        [Test]
+        public void LazyApiTestExtension()
+        {
+            var jsEnv = new JsEnv();
+            Puerts.LazyAPI.RegisterLazyAPI(jsEnv);
+            jsEnv.ExecuteModule("puerts/lazy_api.mjs");
+            jsEnv.Eval<bool>(@"puerts.LazyAPI.SetEnabled(true, true);");
+
+            var i = jsEnv.Eval<Func<UnityEngine.Object,int>>(@"
+                puerts.$extension(global.CS.UnityEngine.Object, global.CS.Puerts.UnitTest.UObjectExtension);
+                (function i(o) {
+                    return o.ExtTest();
+                })
+            ");
+            var m = GameObject.FindAnyObjectByType<MonoBehaviour>();
+            var b = i(m);
+            Assert.AreEqual(b, 3);
             jsEnv.Tick();
         }
 

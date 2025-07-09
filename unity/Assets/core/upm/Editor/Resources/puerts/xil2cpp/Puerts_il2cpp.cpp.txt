@@ -2977,7 +2977,7 @@ void LazyAPINative_RegisterAPI(struct pesapi_ffi* apis, pesapi_callback_info inf
                 {
                     csharpMethodInfo = new CSharpMethodInfo{ reflectionMethod->method->name, isStatic, false, false, needBoxing };
                 }
-                csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(reflectionMethod->method, IsExtensionMethod(reflectionMethod->method)));
+                csharpMethodInfo->OverloadDatas.push_back(CreateOverloadData(reflectionMethod->method, false));
             }
         }
         if (csharpMethodInfo)
