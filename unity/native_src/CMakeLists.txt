@@ -15,12 +15,8 @@ option ( USING_V8 "using v8" ON )
 option ( USING_QJS "using quickjs" ON )
 option ( USING_QJS_SUFFIX "add _qjs to namespace of simule v8 api " ON )
 option ( WITH_SYMBOLS "generate debug symbols" OFF )
+set(CMAKE_CXX_STANDARD 17)
 
-if("${JS_ENGINE}" MATCHES "^v8_10.6.194")
-    set(CMAKE_CXX_STANDARD 17)
-else ()
-    set(CMAKE_CXX_STANDARD 14)
-endif ()
 
 if ( IOS )
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fembed-bitcode")

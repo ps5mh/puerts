@@ -1,3 +1,5 @@
+#if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+
 using NUnit.Framework;
 using System;
 using System.Reflection;
@@ -6,7 +8,8 @@ using System.Threading;
 namespace Puerts.UnitTest
 {
     [TestFixture]
-    public class ByteCodeTest {
+    public class ByteCodeTest
+    {
         [Test]
         public void ESModuleByteCode()
         {
@@ -43,3 +46,5 @@ namespace Puerts.UnitTest
         }
     }
 }
+
+#endif
