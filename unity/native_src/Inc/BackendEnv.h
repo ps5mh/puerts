@@ -101,6 +101,9 @@ namespace PUERTS_NAMESPACE
         std::map<std::string, v8::UniquePersistent<v8::Module>> PathToModuleMap;
 
 #if defined(WITH_V8_BYTECODE)
+#if V8_MAJOR_VERSION >= 11
+        uint32_t Expect_ReadOnlySnapshotChecksum = 0;
+#endif
         uint32_t Expect_FlagHash = 0;
         v8::Global<v8::Function> GenEmptyCode;
 #endif

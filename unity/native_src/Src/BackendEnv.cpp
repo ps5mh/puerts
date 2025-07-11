@@ -369,6 +369,9 @@ void FBackendEnv::Initialize(void* external_quickjs_runtime, void* external_quic
     auto Script = v8::Script::Compile(Context, FV8Utils::V8String(Isolate, "")).ToLocalChecked();
     auto CachedCode = v8::ScriptCompiler::CreateCodeCache(Script->GetUnboundScript());
     const FCodeCacheHeader* CodeCacheHeader = (const FCodeCacheHeader*) CachedCode->data;
+#if V8_MAJOR_VERSION >= 11
+    Expect_ReadOnlySnapshotChecksum = CodeCacheHeader->ReadOnlySnapshotChecksum;
+#endif
     Expect_FlagHash = CodeCacheHeader->FlagHash;    // get FlagHash
     delete CachedCode;
 #endif
@@ -747,6 +750,14 @@ bool FBackendEnv::TryLoadCacheData(v8::Isolate* isolate, v8::Local<v8::Context> 
                 puerts::PLog(puerts::Warning, "FlagHash not match expect %u, but got %u", Expect_FlagHash, cch->FlagHash);
                 cch->FlagHash = Expect_FlagHash;
             }
+#if V8_MAJOR_VERSION >= 11
+            if (cch->ReadOnlySnapshotChecksum != Expect_ReadOnlySnapshotChecksum)
+            {
+                puerts::PLog(puerts::Warning, "ReadOnlySnapshotChecksum not match expect %u, but got %u",
+                    Expect_ReadOnlySnapshotChecksum, cch->ReadOnlySnapshotChecksum);
+                cch->ReadOnlySnapshotChecksum = Expect_ReadOnlySnapshotChecksum;
+            }
+#endif
             static constexpr uint32_t kModuleFlagMask = (1 << 31);
             uint32_t Len = cch->SourceHash & ~kModuleFlagMask;
             v8::Local<v8::Value> Args[] = {v8::Integer::New(isolate, Len)};

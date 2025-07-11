@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System;
 using System.Reflection;
+using System.Threading;
 
 namespace Puerts.UnitTest
 {
@@ -11,6 +12,14 @@ namespace Puerts.UnitTest
         {
             var jsEnv = UnitTestEnv.GetEnv();
             jsEnv.ExecuteModule("bytecode/console_log_test");
+            jsEnv.Tick();
+        }
+
+        [Test]
+        public void ByteCodeUnhandledRejection()
+        {
+            var jsEnv = UnitTestEnv.GetEnv();
+            jsEnv.ExecuteModule("bytecode/unhandled_rejection");
             jsEnv.Tick();
         }
 

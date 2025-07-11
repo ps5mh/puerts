@@ -21,6 +21,9 @@ struct FCodeCacheHeader
     uint32_t VersionHash;
     uint32_t SourceHash;
     uint32_t FlagHash;
+#if V8_MAJOR_VERSION >= 11
+    uint32_t ReadOnlySnapshotChecksum;
+#endif
     uint32_t PayloadLength;
     uint32_t Checksum;
 };
