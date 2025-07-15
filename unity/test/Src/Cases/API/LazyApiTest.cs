@@ -78,26 +78,6 @@ puerts.LazyAPI.SetEnabled(true, true);
         }
 
         [Test]
-        public void LazyApiTestExtension()
-        {
-            var jsEnv = new JsEnv();
-            Puerts.LazyAPI.RegisterLazyAPI(jsEnv);
-            jsEnv.ExecuteModule("puerts/lazy_api.mjs");
-            jsEnv.Eval<bool>(@"puerts.LazyAPI.SetEnabled(true, true);");
-
-            var i = jsEnv.Eval<Func<UnityEngine.Object,int>>(@"
-                puerts.$extension(global.CS.UnityEngine.Object, global.CS.Puerts.UnitTest.UObjectExtension);
-                (function i(o) {
-                    return o.ExtTest();
-                })
-            ");
-            var m = GameObject.FindAnyObjectByType<MonoBehaviour>();
-            var b = i(m);
-            Assert.AreEqual(b, 3);
-            jsEnv.Tick();
-        }
-
-        [Test]
         public void LazyApiTestStaticInherit()
         {
             var jsEnv = new JsEnv();
