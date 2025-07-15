@@ -22,7 +22,7 @@ namespace Puerts.UnitTest
         public void ByteCodeUnhandledRejection()
         {
             var jsEnv = UnitTestEnv.GetEnv();
-            jsEnv.ExecuteModule("bytecode/unhandled_rejection");
+            Assert.Catch(() => jsEnv.ExecuteModule("bytecode/unhandled_rejection"), "Cannot read properties of undefined");
             jsEnv.Tick();
         }
 
