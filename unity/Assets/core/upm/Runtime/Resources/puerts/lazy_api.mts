@@ -6,7 +6,7 @@
 
 import type CSharp from 'csharp';
 
-const { puerts, CS, console: logger } = global;
+const { puerts, CS, console: logger } = global as any;
 
 const REGISTER_LAZY_API = function () {
     // #region native implementations
@@ -445,10 +445,8 @@ const REGISTER_LAZY_API = function () {
             let addAPIMt = MemberTypes.Method | MemberTypes.Field | MemberTypes.Property;
             const cls = r.constructor;
             ensureStaticInherit(cls);
-            if (cls.prototype === r) {
-                return undefined
-            }
-            return addAPIHierarchy(r.GetType(), cls, p, false, addAPIMt) ? r[p] : undefined;
+            const csType = cls.prototype === r ? puerts.$typeof(cls) : r.GetType();
+            return addAPIHierarchy(csType, cls, p, false, addAPIMt) ? r[p] : undefined;
         };
         instanceProxyHandler.set = function (t, p, v, r) {
             const receiver = r;
@@ -660,22 +658,4 @@ if (!puerts.LazyAPI) {
     puerts.LazyAPI.SetEnabled(true);
 }
 
-declare module 'puerts' {
-    // defined in lazy_api.ts
-    type TypeLazyAPI = {
-        config: {
-            IS_INNER_CLASS_LAZY_ENABLED: true; // optimize class import performance/memory usage, by delay import inner classes
-            IS_CLEAR_LAZY_API_ENABLED: true; // optimize memory usage, by manually trigger LazyAPI.Clear()
-            IS_SIMPLIFIED_GENERIC_ENABLED: true; // optimize code style, while accessing generic methods
-            LAZY_API_PROFILE_TIMER: -1; // set to -1 to disable profiler
-            TO_CLEAR_API_JSCLASSES: Set<unknown>; // for switch IS_CLEAR_LAZY_API_ENABLED
-            SET_LAZY_API_NAME: boolean; // useful for profiler show c# api names
-            extensions: Map<unknown, unknown[]>;
-            LL: number; // LogLevel, set to LL.I to enable all logs
-        };
-        Clear: () => string;
-        Dump: () => void;
-        SetEnabled: (enabled: boolean, debug?: boolean) => void;
-    };
-    const LazyAPI: TypeLazyAPI;
-}
+

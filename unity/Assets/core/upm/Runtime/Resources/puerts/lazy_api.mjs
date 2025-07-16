@@ -364,10 +364,8 @@ const REGISTER_LAZY_API = function () {
             let addAPIMt = 8 /* MemberTypes.Method */ | 4 /* MemberTypes.Field */ | 16 /* MemberTypes.Property */;
             const cls = r.constructor;
             ensureStaticInherit(cls);
-            if (cls.prototype === r) {
-                return undefined;
-            }
-            return addAPIHierarchy(r.GetType(), cls, p, false, addAPIMt) ? r[p] : undefined;
+            const csType = cls.prototype === r ? puerts.$typeof(cls) : r.GetType();
+            return addAPIHierarchy(csType, cls, p, false, addAPIMt) ? r[p] : undefined;
         };
         instanceProxyHandler.set = function (t, p, v, r) {
             const receiver = r;
