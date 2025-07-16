@@ -107,7 +107,6 @@ const REGISTER_LAZY_API = function () {
         if (!extClses)
             return false;
         1 /* LL.D */ >= config.LL && log(1 /* LL.D */, 'check extension class', jsClass, apiName, false);
-        const typesRef = puerts.$ref(8 /* MemberTypes.Method */);
         const flags = 16 /* BindingFlags.Public */ | 2 /* BindingFlags.DeclaredOnly */ | 8 /* BindingFlags.Static */;
         let api;
         for (const extCls of extClses) {
@@ -116,6 +115,7 @@ const REGISTER_LAZY_API = function () {
             const tryExtType = puerts.$typeof(extCls);
             if (!tryExtType)
                 continue;
+            const typesRef = puerts.$ref(8 /* MemberTypes.Method */);
             api = CSIMPL.RegisterAPI(tryExtType, apiName, typesRef, flags);
             if (puerts.$unref(typesRef) === 8 /* MemberTypes.Method */) {
                 break;

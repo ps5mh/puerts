@@ -181,13 +181,13 @@ const REGISTER_LAZY_API = function () {
     function addExtensionAPI(csType: CSharp.System.Type, jsClass: JSClass, apiName: string, extClses: JSClass[] | undefined) {
         if (!extClses) return false;
         LL.D >= config.LL && log(LL.D, 'check extension class', jsClass, apiName, false);
-        const typesRef = puerts.$ref(MemberTypes.Method);
         const flags = BindingFlags.Public | BindingFlags.DeclaredOnly | BindingFlags.Static;
         let api;
         for (const extCls of extClses) {
             if (!extCls) continue;
             const tryExtType = puerts.$typeof(extCls);
             if (!tryExtType) continue;
+            const typesRef = puerts.$ref(MemberTypes.Method);
             api = CSIMPL.RegisterAPI(tryExtType, apiName, typesRef, flags);
             if (puerts.$unref(typesRef) === MemberTypes.Method) {
                 break;
