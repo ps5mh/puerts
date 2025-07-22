@@ -271,7 +271,7 @@ namespace Puerts
             {
                 memberTypes = (int)MemberTypes.Method;
                 members = type.GetMember(apiName, MemberTypes.Method, flags ^ BindingFlags.DeclaredOnly); // ^ BindingFlags.DeclaredOnly to include override methods
-                return members.Select(x => x as MethodInfo).ToArray();
+                return members.Select(x => x as MethodInfo).Where(x => !x.IsGenericMethod).ToArray();
             }
             else if (members[0] is Type)
             {

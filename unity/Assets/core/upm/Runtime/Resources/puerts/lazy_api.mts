@@ -640,14 +640,16 @@ const REGISTER_LAZY_API = function () {
 
     class LazyAPI {
         static config = config;
-        static Clear: () => string = Clear;
-        static Dump: () => void = Dump;
-        static SetEnabled: (enabled: boolean, debug?: boolean) => void = SetEnabled;
+        static Clear = Clear;
+        static Dump = Dump;
+        static addAPIHierarchy = addAPIHierarchy;
+        static SetEnabled = SetEnabled;
         static AddAPI = (cls, name, isStatic, memberTypes = 8 | 4 | 16 | 128) => {
             if (isStatic && name in cls) return;
             if (!isStatic && name in cls.prototype) return;
             addAPIHierarchy(puerts.$typeof(cls), cls, name, isStatic, memberTypes);
         };
+
     }
     puerts.LazyAPI = LazyAPI;
     return LazyAPI;

@@ -564,6 +564,7 @@ const REGISTER_LAZY_API = function () {
     LazyAPI.config = config;
     LazyAPI.Clear = Clear;
     LazyAPI.Dump = Dump;
+    LazyAPI.addAPIHierarchy = addAPIHierarchy;
     LazyAPI.SetEnabled = SetEnabled;
     LazyAPI.AddAPI = (cls, name, isStatic, memberTypes = 8 | 4 | 16 | 128) => {
         if (isStatic && name in cls)
